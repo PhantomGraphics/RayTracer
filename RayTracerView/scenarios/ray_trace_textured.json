@@ -1,0 +1,14 @@
+{
+  "name": "ray_trace_textured",
+  "steps": [
+    { "label": "Load cube_material.gltf",
+      "command": "LoadFile:../../CGLib/GltfViewer/scenarios/models/cube_material.gltf",
+      "expect_prefix": "OK:" },
+    { "label": "Ray trace 48x32, spp=2, depth=3",
+      "command": "RunRayTrace:48,32,2,3",
+      "expect": "OK:48x32" },
+    { "label": "Save screenshot",
+      "command": "SaveScreenshot:scenarios/screenshots/ray_trace_textured.png",
+      "expect_prefix": "OK:" }
+  ]
+}

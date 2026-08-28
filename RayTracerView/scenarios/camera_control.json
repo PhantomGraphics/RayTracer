@@ -1,0 +1,10 @@
+{
+  "name": "camera_control",
+  "steps": [
+    { "label": "Default cam dist is 3", "command": "GetCamDist",    "expect": "Val:3" },
+    { "label": "Set cam dist to 10",    "command": "SetCamDist:10", "expect": "OK" },
+    { "label": "Cam dist is now 10",    "command": "GetCamDist",    "expect": "Val:10" },
+    { "label": "Reset camera",          "command": "ResetCamera",   "expect": "OK" },
+    { "label": "Cam dist back to 3",    "command": "GetCamDist",    "expect": "Val:3" }
+  ]
+}

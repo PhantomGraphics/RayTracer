@@ -1,0 +1,41 @@
+{
+  "render": {
+    "width": 200,
+    "height": 200,
+    "samples_per_pixel": 12,
+    "max_depth": 10,
+    "seed": 20260413,
+    "output": "cornell_box_scene.png"
+  },
+  "camera": {
+    "look_from": [278, 278, -800],
+    "look_at":   [278, 278,    0],
+    "up":        [0,   1,      0],
+    "fov":       40.0
+  },
+  "background": [0, 0, 0],
+  "materials": [
+    { "name": "red",   "type": "lambertian",   "albedo": [0.65, 0.05, 0.05] },
+    { "name": "white", "type": "lambertian",   "albedo": [0.73, 0.73, 0.73] },
+    { "name": "green", "type": "lambertian",   "albedo": [0.12, 0.45, 0.15] },
+    { "name": "light", "type": "diffuse_light","emit":   [15,   15,   15  ] }
+  ],
+  "objects": [
+    { "type": "quad", "material": "green",
+      "q": [555, 0,   0  ], "u": [0, 555, 0], "v": [0,    0, 555] },
+    { "type": "quad", "material": "red",
+      "q": [0,   0,   555], "u": [0, 555, 0], "v": [0,    0, -555] },
+    { "type": "quad", "material": "light",
+      "q": [343, 554, 332], "u": [-130, 0, 0], "v": [0,   0, -105] },
+    { "type": "quad", "material": "white",
+      "q": [0,   0,   0  ], "u": [555, 0, 0], "v": [0,    0, 555] },
+    { "type": "quad", "material": "white",
+      "q": [555, 555, 555], "u": [-555, 0, 0], "v": [0,   0, -555] },
+    { "type": "quad", "material": "white",
+      "q": [0,   0,   555], "u": [555, 0, 0], "v": [0, 555, 0] },
+    { "type": "box",  "material": "white",
+      "min": [130, 0, 65 ], "max": [295, 165, 230] },
+    { "type": "box",  "material": "white",
+      "min": [265, 0, 295], "max": [430, 330, 460] }
+  ]
+}

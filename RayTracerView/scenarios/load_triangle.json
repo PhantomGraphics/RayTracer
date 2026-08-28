@@ -1,0 +1,12 @@
+{
+  "name": "load_triangle",
+  "steps": [
+    { "label": "Load triangle.gltf",
+      "command": "LoadFile:../../CGLib/GltfViewer/scenarios/models/triangle.gltf",
+      "expect_prefix": "OK:" },
+    { "label": "MeshCount = 1",      "command": "GetMeshCount",     "expect": "MeshCount:1" },
+    { "label": "MaterialCount = 0",  "command": "GetMaterialCount", "expect": "MaterialCount:0" },
+    { "label": "TextureCount = 0",   "command": "GetTextureCount",  "expect": "TextureCount:0" },
+    { "label": "App still alive",    "command": "GetStatus",        "expect": "OK" }
+  ]
+}

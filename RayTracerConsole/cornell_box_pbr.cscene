@@ -1,0 +1,57 @@
+{
+  "render": {
+    "width": 200,
+    "height": 200,
+    "samples_per_pixel": 12,
+    "max_depth": 10,
+    "seed": 20260413,
+    "output": "cornell_box_pbr.png"
+  },
+  "camera": {
+    "look_from": [278, 278, -800],
+    "look_at":   [278, 278,    0],
+    "up":        [0,   1,      0],
+    "fov":       40.0
+  },
+  "background": [0, 0, 0],
+  "materials": [
+    { "name": "red",   "type": "lambertian",   "albedo": [0.65, 0.05, 0.05] },
+    { "name": "white", "type": "lambertian",   "albedo": [0.73, 0.73, 0.73] },
+    { "name": "green", "type": "lambertian",   "albedo": [0.12, 0.45, 0.15] },
+    { "name": "light", "type": "diffuse_light","emit":   [15,   15,   15  ] },
+    {
+      "name": "chrome",
+      "type": "pbr",
+      "albedo":    [0.95, 0.93, 0.88],
+      "metallic":  1.0,
+      "roughness": 0.05
+    },
+    {
+      "name": "glass",
+      "type": "pbr",
+      "albedo":       [1.0, 1.0, 1.0],
+      "metallic":     0.0,
+      "roughness":    0.0,
+      "transmission": 1.0,
+      "ior":          1.5
+    }
+  ],
+  "objects": [
+    { "type": "quad", "material": "green",
+      "q": [555, 0,   0  ], "u": [0, 555, 0], "v": [0,    0, 555] },
+    { "type": "quad", "material": "red",
+      "q": [0,   0,   555], "u": [0, 555, 0], "v": [0,    0, -555] },
+    { "type": "quad", "material": "light",
+      "q": [343, 554, 332], "u": [-130, 0, 0], "v": [0,   0, -105] },
+    { "type": "quad", "material": "white",
+      "q": [0,   0,   0  ], "u": [555, 0, 0], "v": [0,    0, 555] },
+    { "type": "quad", "material": "white",
+      "q": [555, 555, 555], "u": [-555, 0, 0], "v": [0,   0, -555] },
+    { "type": "quad", "material": "white",
+      "q": [0,   0,   555], "u": [555, 0, 0], "v": [0, 555, 0] },
+    { "type": "sphere", "material": "chrome",
+      "center": [190, 90, 190], "radius": 90 },
+    { "type": "sphere", "material": "glass",
+      "center": [360, 90, 350], "radius": 90 }
+  ]
+}

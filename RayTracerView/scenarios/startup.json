@@ -1,0 +1,9 @@
+{
+  "name": "startup",
+  "steps": [
+    { "label": "App is alive",     "command": "GetStatus",        "expect": "OK" },
+    { "label": "No meshes yet",    "command": "GetMeshCount",     "expect": "MeshCount:0" },
+    { "label": "No materials yet", "command": "GetMaterialCount", "expect": "MaterialCount:0" },
+    { "label": "No textures yet",  "command": "GetTextureCount",  "expect": "TextureCount:0" }
+  ]
+}

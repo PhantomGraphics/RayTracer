@@ -1,0 +1,11 @@
+{
+  "name": "load_material",
+  "steps": [
+    { "label": "Load cube_material.gltf",
+      "command": "LoadFile:../../CGLib/GltfViewer/scenarios/models/cube_material.gltf",
+      "expect_prefix": "OK:" },
+    { "label": "MeshCount = 1",       "command": "GetMeshCount",     "expect": "MeshCount:1" },
+    { "label": "Has a material",     "command": "GetMaterialCount", "expect_not": "MaterialCount:0" },
+    { "label": "App still alive",    "command": "GetStatus",        "expect": "OK" }
+  ]
+}

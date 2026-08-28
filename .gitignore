@@ -1,0 +1,27 @@
+﻿################################################################################
+# この .gitignore ファイルは Microsoft(R) Visual Studio によって自動的に作成されました。
+################################################################################
+
+/RayTracer/x64/Release
+*.ppm
+/RayTracer/x64/Debug
+/RayTracer/output.png
+/RayTracerView/x64/Debug
+/RayTracerView/imgui.ini
+/RayTracerView/x64/Release
+/RayTracerTest/x64/Debug
+/RayTracer/RayTracer/x64/Debug
+/RayTracer/RayTracer/x64/Release
+/RayTracerView/RayTracerView/x64/Debug
+/.vs/RayTracer
+/Debug
+/packages/Microsoft.googletest.v140.windesktop.msvcstl.dyn.rt-dyn.1.8.1.3
+/RayTracerLib/RayTracerLib/x64/Debug
+/RayTracerLib/x64
+/RayTracerTest/RayTracerTest/x64/Debug
+/RayTracerTest/x64/Release
+/x64/Debug
+/RayTracerConsole/RayTracer/x64
+/RayTracerConsole/x64
+/RayTracerView/scenarios/screenshots
+/build_linux

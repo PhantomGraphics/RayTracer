@@ -1,0 +1,9 @@
+{
+  "name": "load_error",
+  "steps": [
+    { "label": "Load nonexistent file",
+      "command": "LoadFile:scenarios/models/does_not_exist.gltf",
+      "expect_prefix": "Error:" },
+    { "label": "App still alive", "command": "GetStatus", "expect": "OK" }
+  ]
+}

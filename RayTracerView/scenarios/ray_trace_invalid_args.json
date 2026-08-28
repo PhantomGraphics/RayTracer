@@ -1,0 +1,12 @@
+{
+  "name": "ray_trace_invalid_args",
+  "steps": [
+    { "label": "Missing arguments",
+      "command": "RunRayTrace:32,32",
+      "expect_prefix": "Error:" },
+    { "label": "Non-numeric argument",
+      "command": "RunRayTrace:abc,32,2,3",
+      "expect_prefix": "Error:" },
+    { "label": "App still alive", "command": "GetStatus", "expect": "OK" }
+  ]
+}

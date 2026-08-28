@@ -1,0 +1,12 @@
+{
+  "name": "ray_trace_triangle",
+  "steps": [
+    { "label": "Load triangle.gltf",
+      "command": "LoadFile:../../CGLib/GltfViewer/scenarios/models/triangle.gltf",
+      "expect_prefix": "OK:" },
+    { "label": "Ray trace 32x32, spp=2, depth=3",
+      "command": "RunRayTrace:32,32,2,3",
+      "expect": "OK:32x32" },
+    { "label": "App still alive", "command": "GetStatus", "expect": "OK" }
+  ]
+}
