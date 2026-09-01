@@ -5,7 +5,7 @@
 # Windows build (RayTracer/RayTracer/RayTracer.vcxproj + RayTracer/
 # RayTracerTest/RayTracerTest.vcxproj, driven by Phantom2026.sln).
 # MathCore/GraphicsCore/SpaceCore/GltfRendererCore/etc. are now defined once
-# in ../cmake/CrystalCoreLibs.cmake and ../cmake/CrystalVulkanApp.cmake
+# in ../cmake/PhantomCoreLibs.cmake and ../cmake/PhantomVulkanApp.cmake
 # (Phase 4 §5.4 item 1 dedup, docs/todo/PLAN_crossplatform_non_cgapp_build.md)
 # -- this file just calls them (RayTracerCore itself links against MathCore/
 # GraphicsCore/SpaceCore instead of bundling their raw sources, same
@@ -36,7 +36,7 @@
 #
 # RayTracerView.vcxproj's real <ProjectReference> list is: GltfRenderer,
 # VkAppBase, VulkanGraphics, UIWidgets, Math, Graphics, Space, RayTracer(Core)
-# -- no VkRenderer. GltfSceneBuilder.cpp consumes Crystal::Gltf::
+# -- no VkRenderer. GltfSceneBuilder.cpp consumes Phantom::Gltf::
 # GltfAccessorView/GltfTypes directly, so this needs the full
 # GltfRendererCore chain.
 
@@ -57,9 +57,9 @@ set(CGLIB_ROOT ${REPO_ROOT}/CGLib)
 
 if(MSVC)
     add_compile_options(/utf-8)
-    set(CRYSTAL_WARN_FLAGS /W3)
+    set(PHANTOM_WARN_FLAGS /W3)
 else()
-    set(CRYSTAL_WARN_FLAGS -Wall)
+    set(PHANTOM_WARN_FLAGS -Wall)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${REPO_ROOT}/cmake)
@@ -67,22 +67,22 @@ include(PhantomGTest)
 include(PhantomCoreLibs)
 include(PhantomVulkanApp)
 
-crystal_add_math_core()
-crystal_add_graphics_core()
-crystal_add_space_core()
+phantom_add_math_core()
+phantom_add_graphics_core()
+phantom_add_space_core()
 
 add_library(RayTracerCore STATIC
     ${RAYTRACER_ROOT}/RayTracer/PathTracer.cpp
 )
 target_include_directories(RayTracerCore PRIVATE ${REPO_ROOT})
 target_link_libraries(RayTracerCore PUBLIC MathCore GraphicsCore SpaceCore)
-target_compile_options(RayTracerCore PRIVATE ${CRYSTAL_WARN_FLAGS})
+target_compile_options(RayTracerCore PRIVATE ${PHANTOM_WARN_FLAGS})
 
 # --- RayTracerTest (GoogleTest) ---
 
-crystal_find_gtest()
+phantom_find_gtest()
 
-if(CRYSTAL_GTEST_FOUND)
+if(PHANTOM_GTEST_FOUND)
     enable_testing()
 
     add_executable(RayTracerTest
@@ -98,7 +98,7 @@ if(CRYSTAL_GTEST_FOUND)
         GTest::gtest
         GTest::gtest_main
     )
-    target_compile_options(RayTracerTest PRIVATE ${CRYSTAL_WARN_FLAGS})
+    target_compile_options(RayTracerTest PRIVATE ${PHANTOM_WARN_FLAGS})
 
     include(GoogleTest)
     gtest_discover_tests(RayTracerTest)
@@ -110,17 +110,17 @@ endif()
 # RayTracerView (standalone ImGui + Vulkan viewer) -- Phase 2 item 8.
 # ---------------------------------------------------------------------------
 
-crystal_find_vulkan_headers()
+phantom_find_vulkan_headers()
 
-if(CRYSTAL_VULKAN_INCLUDE_DIR)
+if(PHANTOM_VULKAN_INCLUDE_DIR)
 
-crystal_find_vulkan_loader()
-crystal_find_glfw_loader()
+phantom_find_vulkan_loader()
+phantom_find_glfw_loader()
 
-if(CRYSTAL_VULKAN_LIBRARY AND CRYSTAL_GLFW_LIBRARY)
+if(PHANTOM_VULKAN_LIBRARY AND PHANTOM_GLFW_LIBRARY)
 
-crystal_add_vkappbase_core()
-crystal_add_gltfrenderer_core()
+phantom_add_vkappbase_core()
+phantom_add_gltfrenderer_core()
 
 add_executable(RayTracerView
     ${RAYTRACER_ROOT}/RayTracerView/main.cpp
@@ -139,13 +139,13 @@ target_link_libraries(RayTracerView PRIVATE
     RayTracerCore
     GltfRendererCore
     VkAppBaseCore
-    ${CRYSTAL_VULKAN_LIBRARY}
-    ${CRYSTAL_GLFW_LIBRARY}
+    ${PHANTOM_VULKAN_LIBRARY}
+    ${PHANTOM_GLFW_LIBRARY}
 )
-target_compile_options(RayTracerView PRIVATE ${CRYSTAL_WARN_FLAGS})
+target_compile_options(RayTracerView PRIVATE ${PHANTOM_WARN_FLAGS})
 
 # RayTracerView has no shaders/ dir of its own -- RayTracerView.vcxproj's
-# PostBuildEvent xcopies Crystal/GltfViewer/shaders/*.spv (it reuses
+# PostBuildEvent xcopies CGLib/GltfViewer/shaders/*.spv (it reuses
 # GltfSceneRenderer's pipeline via GltfSceneBuilder.cpp, not a bespoke shader set).
 add_custom_command(TARGET RayTracerView POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

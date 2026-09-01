@@ -296,7 +296,7 @@ RayTracerView
 - `CGLib/GltfRenderer/Renderer/GltfSceneRenderer.cpp` — `getCameraParams()`実装
 - `RayTracer/RayTracer/PathTracer.h` — `RtCameraSpec`構造体, `renderCornellBoxWithCamera()`追加
 - `RayTracer/RayTracer/PathTracer.cpp` — `renderCornellBoxWithCamera()`実装
-- `Crystal2024.sln` — RayTracerViewプロジェクト登録
+- `Phantom2026.sln` — RayTracerViewプロジェクト登録
 
 ### Phase 7完了後のレイトレース動作
 - glTFファイルが読み込まれている場合: GltfSceneBuilder でメッシュをトライアングルリストに変換し、BVH + パストレースで描画（空は sky gradient 背景）
