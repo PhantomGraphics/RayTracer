@@ -6,7 +6,6 @@
 # RayTracerTest/RayTracerTest.vcxproj, driven by Phantom2026.sln).
 # MathCore/GraphicsCore/SpaceCore/GltfRendererCore/etc. are now defined once
 # in ../cmake/PhantomCoreLibs.cmake and ../cmake/PhantomVulkanApp.cmake
-# (Phase 4 §5.4 item 1 dedup, docs/todo/PLAN_crossplatform_non_cgapp_build.md)
 # -- this file just calls them (RayTracerCore itself links against MathCore/
 # GraphicsCore/SpaceCore instead of bundling their raw sources, same
 # behavior, cleaner) and adds RayTracerTest/RayTracerView on top, so it also
