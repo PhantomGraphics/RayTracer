@@ -32,6 +32,21 @@ struct RtTexture {
     int channels = 4;
 };
 
+// A light imported from a glTF KHR_lights_punctual node (see GltfSceneBuilder::buildFromGltf()).
+// Spot lights are not modeled -- their cone falls back to an omnidirectional Point light.
+// `intensity` is expected to already be converted into the path tracer's unitless radiance
+// scale by the caller (GltfSceneBuilder divides the glTF photometric intensity by the same
+// 683 lm/W luminous-efficacy constant Universe's Rendering/GltfRenderer.cpp uses, so a scene
+// lit by the same glTF file receives comparable light energy in both renderers).
+struct RtLight {
+    enum class Type { Directional, Point };
+    Type   type         = Type::Directional;
+    double position[3]  = {0.0, 0.0, 0.0};   // Point only
+    double direction[3] = {0.0, -1.0, 0.0};  // Directional: direction the light travels
+    double color[3]     = {1.0, 1.0, 1.0};
+    double intensity    = 1.0;
+};
+
 struct RtTriangle {
     double v0[3]       = {0.0, 0.0, 0.0};
     double v1[3]       = {0.0, 0.0, 0.0};
@@ -85,6 +100,16 @@ public:
                 const RtCameraSpec& cam,
                 Graphics::Imageuc& output,
                 const std::vector<RtTexture>& textures) const;
+
+    // Render a triangle scene with texture data and explicit (KHR_lights_punctual) lights.
+    // Lights are evaluated via next-event estimation against each surface's diffuse lobe only
+    // (see PbrMaterial::directLightBRDF() in PathTracer.cpp) -- indirect/GI lighting and
+    // emissive-triangle lighting are unaffected and still work exactly as before.
+    bool render(const std::vector<RtTriangle>& triangles,
+                const RtCameraSpec& cam,
+                Graphics::Imageuc& output,
+                const std::vector<RtTexture>& textures,
+                const std::vector<RtLight>& lights) const;
 
     // Load and render a .cscene JSON file
     SceneRenderResult renderScene(const std::string& scenePath,

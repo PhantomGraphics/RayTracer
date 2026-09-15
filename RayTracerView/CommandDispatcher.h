@@ -11,10 +11,15 @@
 #include <string>
 #include <vector>
 
+class RayTracerApp; // fwd decl -- avoids a circular include with RayTracerApp.h
+
 class CommandDispatcher : public IScenarioDispatcher {
 public:
     void setDocument(const Phantom::Gltf::GltfDocument* doc) { doc_ = doc; }
     void setRenderer(Phantom::Gltf::GltfSceneRenderer* r) { renderer_ = r; }
+    // Non-owning; needed for the asset-camera toggle and the raster/offline report commands
+    // (Phase 4B item 5), which live on RayTracerApp rather than doc_/renderer_.
+    void setApp(RayTracerApp* app) { app_ = app; }
 
     void processQueue();
 
@@ -41,6 +46,7 @@ private:
 
     const Phantom::Gltf::GltfDocument* doc_ = nullptr;
     Phantom::Gltf::GltfSceneRenderer* renderer_ = nullptr;
+    RayTracerApp* app_ = nullptr;
 
     std::optional<std::filesystem::path> pendingLoad_;
     std::optional<std::filesystem::path> pendingScreenshot_;

@@ -1,0 +1,43 @@
+{
+  "name": "light_camera_report",
+  "steps": [
+    { "label": "No document yet: no asset camera",
+      "command": "GetHasAssetCamera", "expect": "HasAssetCamera:0" },
+    { "label": "SaveRayTraceResult before any render is an error",
+      "command": "SaveRayTraceResult:scenarios/screenshots/lcr_should_not_exist.png",
+      "expect": "Error:no ray trace result to save" },
+
+    { "label": "Load lit_camera_triangle.gltf (1 KHR_lights_punctual light + 1 Perspective camera)",
+      "command": "LoadFile:scenarios/models/lit_camera_triangle.gltf",
+      "expect_prefix": "OK:" },
+    { "label": "Loading captured the document's camera",
+      "command": "GetHasAssetCamera", "expect": "HasAssetCamera:1" },
+    { "label": "Asset camera starts unused (stay on the live orbit camera)",
+      "command": "GetUseAssetCamera", "expect": "UseAssetCamera:0" },
+
+    { "label": "Enable the asset camera",
+      "command": "SetUseAssetCamera:1", "expect": "OK" },
+    { "label": "Asset camera is now in use",
+      "command": "GetUseAssetCamera", "expect": "UseAssetCamera:1" },
+
+    { "label": "Ray trace with the asset camera + KHR_lights_punctual light active",
+      "command": "RunRayTrace:32,32,2,3", "expect": "OK:32x32" },
+    { "label": "Save the offline result to disk",
+      "command": "SaveRayTraceResult:scenarios/screenshots/lit_camera_result.png",
+      "expect_prefix": "OK:saved" },
+
+    { "label": "Compare the saved result against itself: zero diff",
+      "command": "CompareImages:scenarios/screenshots/lit_camera_result.png,scenarios/screenshots/lit_camera_result.png",
+      "expect": "Diff:mean=0.000000,max=0,width=32,height=32" },
+    { "label": "Compare against a nonexistent file",
+      "command": "CompareImages:scenarios/screenshots/lit_camera_result.png,scenarios/screenshots/does_not_exist.png",
+      "expect_prefix": "Error:cannot read" },
+
+    { "label": "Disable the asset camera again",
+      "command": "SetUseAssetCamera:0", "expect": "OK" },
+    { "label": "Asset camera is no longer in use",
+      "command": "GetUseAssetCamera", "expect": "UseAssetCamera:0" },
+
+    { "label": "App still alive", "command": "GetStatus", "expect": "OK" }
+  ]
+}

@@ -3,12 +3,15 @@
 
 #include "../../CGLib/GltfRenderer/Gltf/GltfAccessorView.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfTypes.h"
+#include "../../CGLib/GltfRenderer/Gltf/GltfLightsCameras.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 using Phantom::RayTracer::RtTriangle;
 using Phantom::RayTracer::RtTexture;
+using Phantom::RayTracer::RtLight;
+using Phantom::RayTracer::RtCameraSpec;
 using namespace Phantom::Gltf;
 
 namespace {
@@ -173,10 +176,60 @@ GltfBuildResult buildFromGltf(const GltfDocument& doc)
         result.textures.push_back(std::move(tex));
     }
 
+    // ---- lights (KHR_lights_punctual) ----
+    const auto lc = collectGltfLightsAndCameras(doc);
+    result.lights.reserve(lc.lights.size());
+    for (const auto& inst : lc.lights) {
+        const GltfLight& gl = doc.lights[inst.lightIndex];
+        if (gl.type != "Directional" && gl.type != "Point" && gl.type != "Spot")
+            continue; // "Unknown" -- nothing sensible to convert
+
+        RtLight rl;
+        // Spot falls back to omnidirectional Point -- RtLight has no cone attenuation yet.
+        rl.type = (gl.type == "Directional") ? RtLight::Type::Directional : RtLight::Type::Point;
+
+        const glm::vec3 pos = glm::vec3(inst.worldMatrix[3]);
+        const glm::vec3 dir = glm::normalize(glm::vec3(inst.worldMatrix * glm::vec4(0.f, 0.f, -1.f, 0.f)));
+        rl.position[0]  = pos.x;  rl.position[1]  = pos.y;  rl.position[2]  = pos.z;
+        rl.direction[0] = dir.x;  rl.direction[1] = dir.y;  rl.direction[2] = dir.z;
+        rl.color[0] = gl.color.r; rl.color[1] = gl.color.g; rl.color[2] = gl.color.b;
+        // Same 683 lm/W luminous-efficacy conversion Universe's Rendering/GltfRenderer.cpp uses
+        // (see its comment for the derivation) -- keeps the two renderers' light energy for the
+        // same glTF file directly comparable, per Phase 4B item 5.
+        rl.intensity = static_cast<double>(gl.intensity) / 683.0;
+        result.lights.push_back(rl);
+    }
+
     return result;
 }
 
 std::vector<RtTriangle> buildTrianglesFromGltf(const GltfDocument& doc)
 {
     return buildFromGltf(doc).triangles;
+}
+
+std::optional<RtCameraSpec> extractFirstCamera(const GltfDocument& doc)
+{
+    const auto lc = collectGltfLightsAndCameras(doc);
+    if (lc.cameras.empty()) return std::nullopt;
+
+    // First instance found by the same depth-first node walk Universe's applyAssetCamera() uses.
+    const auto& inst = lc.cameras.front();
+    if (inst.cameraIndex < 0 || inst.cameraIndex >= static_cast<int>(doc.cameras.size()))
+        return std::nullopt;
+    const GltfCamera& cam = doc.cameras[inst.cameraIndex];
+    if (cam.type != "Perspective") return std::nullopt; // RtCameraSpec has no ortho projection
+
+    const glm::vec3 eye = glm::vec3(inst.worldMatrix[3]);
+    // A glTF camera node looks along local -Z with +Y up (GltfLightsCameras.h doc comment).
+    const glm::vec3 fwd = glm::normalize(glm::vec3(inst.worldMatrix * glm::vec4(0.f, 0.f, -1.f, 0.f)));
+    const glm::vec3 up  = glm::normalize(glm::vec3(inst.worldMatrix * glm::vec4(0.f, 1.f, 0.f, 0.f)));
+
+    RtCameraSpec spec;
+    spec.lookFrom[0] = eye.x; spec.lookFrom[1] = eye.y; spec.lookFrom[2] = eye.z;
+    const glm::vec3 at = eye + fwd;
+    spec.lookAt[0] = at.x; spec.lookAt[1] = at.y; spec.lookAt[2] = at.z;
+    spec.up[0] = up.x; spec.up[1] = up.y; spec.up[2] = up.z;
+    spec.fovDeg = glm::degrees(cam.yfov);
+    return spec;
 }

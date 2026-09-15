@@ -14,9 +14,11 @@ RayTracerApp::RayTracerApp(int width, int height, const std::string& title)
         &renderer_,
         [this](const std::filesystem::path& p) { pendingPath_ = p; },
         [this](int w, int h, int spp, int d)   { onRayTrace(w, h, spp, d); });
+    menuPanel_.setApp(this);
 
     dispatcher_.setDocument(&doc_);
     dispatcher_.setRenderer(&renderer_);
+    dispatcher_.setApp(this);
     scenarioBrowser_.setHost(this);
     scenarioBrowser_.setDefaultFolder("scenarios");
 
@@ -126,6 +128,9 @@ void RayTracerApp::loadGltf(const std::filesystem::path& path)
     doc_ = std::move(*doc);
     renderer_.setDocument(doc_);
     menuPanel_.setFilePath(path);
+
+    assetCamera_   = extractFirstCamera(doc_);
+    useAssetCamera_ = false; // stay on the live orbit camera until the user opts in
 }
 
 void RayTracerApp::reloadFile(const std::filesystem::path& path)
@@ -139,19 +144,25 @@ void RayTracerApp::reloadFile(const std::filesystem::path& path)
 
 void RayTracerApp::onRayTrace(int width, int height, int spp, int depth)
 {
-    const RtCameraParams cp = renderer_.getCameraParams();
-
+    // Phase 4B item 5 "same camera asset": prefer the glTF's own camera when the user has
+    // opted into it; otherwise use the live orbit camera (the default -- keeps the offline
+    // render directly comparable to whatever the raster viewport is currently showing).
     Phantom::RayTracer::RtCameraSpec cam;
-    cam.lookFrom[0] = cp.eye.x;
-    cam.lookFrom[1] = cp.eye.y;
-    cam.lookFrom[2] = cp.eye.z;
-    cam.lookAt[0]   = cp.target.x;
-    cam.lookAt[1]   = cp.target.y;
-    cam.lookAt[2]   = cp.target.z;
-    cam.up[0]       = cp.up.x;
-    cam.up[1]       = cp.up.y;
-    cam.up[2]       = cp.up.z;
-    cam.fovDeg      = static_cast<double>(cp.fovDeg);
+    if (useAssetCamera_ && assetCamera_) {
+        cam = *assetCamera_;
+    } else {
+        const RtCameraParams cp = renderer_.getCameraParams();
+        cam.lookFrom[0] = cp.eye.x;
+        cam.lookFrom[1] = cp.eye.y;
+        cam.lookFrom[2] = cp.eye.z;
+        cam.lookAt[0]   = cp.target.x;
+        cam.lookAt[1]   = cp.target.y;
+        cam.lookAt[2]   = cp.target.z;
+        cam.up[0]       = cp.up.x;
+        cam.up[1]       = cp.up.y;
+        cam.up[2]       = cp.up.z;
+        cam.fovDeg      = static_cast<double>(cp.fovDeg);
+    }
 
     Phantom::RayTracer::RenderSettings settings;
     settings.width           = width;
@@ -160,11 +171,12 @@ void RayTracerApp::onRayTrace(int width, int height, int spp, int depth)
     settings.maxDepth        = depth;
 
     if (!doc_.meshes.empty()) {
-        // glTF loaded: convert meshes to triangles + textures and path-trace
+        // glTF loaded: convert meshes + textures + KHR_lights_punctual lights and path-trace
         auto built = buildFromGltf(doc_);
         resultPanel_.triggerRenderGltf(cam, settings,
                                        std::move(built.triangles),
-                                       std::move(built.textures));
+                                       std::move(built.textures),
+                                       std::move(built.lights));
     } else {
         // No glTF: fall back to Cornell Box demo
         resultPanel_.triggerRender(cam, settings);

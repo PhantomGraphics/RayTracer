@@ -1,7 +1,13 @@
 #include "pch.h"
 #include "CommandDispatcher.h"
+#include "RayTracerApp.h"
+
+#include "../../CGLib/Graphics/ImageFileReader.h"
 
 #include <charconv>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 
 using namespace Phantom::Gltf;
 
@@ -32,6 +38,46 @@ std::vector<std::string> splitCsv(const std::string& s) {
         }
     }
     return parts;
+}
+
+// Phase 4B item 5 "report the raster/offline diff": mean and max per-channel absolute
+// difference (RGB only, 0-255 scale) between two equally-sized PNGs -- typically a raster
+// Screenshot: and a SaveRayTraceResult: of the same camera/scene. Formats a "Diff:..." response
+// directly since this has no async dependency (both files are already on disk by the time a
+// scenario issues this command).
+std::string compareImages(const std::string& pathA, const std::string& pathB) {
+    Phantom::Graphics::ImageFileReader readerA, readerB;
+    if (!readerA.read(pathA)) return "Error:cannot read " + pathA;
+    if (!readerB.read(pathB)) return "Error:cannot read " + pathB;
+
+    const auto imgA = readerA.toImage();
+    const auto imgB = readerB.toImage();
+    if (imgA.getWidth() != imgB.getWidth() || imgA.getHeight() != imgB.getHeight()) {
+        return "Error:size mismatch " +
+               std::to_string(imgA.getWidth()) + "x" + std::to_string(imgA.getHeight()) + " vs " +
+               std::to_string(imgB.getWidth()) + "x" + std::to_string(imgB.getHeight());
+    }
+
+    const int w = imgA.getWidth();
+    const int h = imgA.getHeight();
+    double sumDiff = 0.0;
+    int    maxDiff = 0;
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const auto ca = imgA.getColor(x, y);
+            const auto cb = imgB.getColor(x, y);
+            for (int c = 0; c < 3; ++c) {
+                const int diff = std::abs(static_cast<int>(ca[c]) - static_cast<int>(cb[c]));
+                sumDiff += diff;
+                maxDiff = std::max(maxDiff, diff);
+            }
+        }
+    }
+    const double mean = sumDiff / (static_cast<double>(w) * h * 3.0);
+
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "Diff:mean=%.6f,max=%d,width=%d,height=%d", mean, maxDiff, w, h);
+    return buf;
 }
 
 } // namespace
@@ -169,6 +215,40 @@ std::string CommandDispatcher::route(const std::string& cmd) {
             return "Error:invalid RunRayTrace arguments";
         pendingRayTrace_ = req;
         return {};
+    }
+
+    // Phase 4B item 5 "same camera asset" -- toggle between the glTF document's own first
+    // Perspective camera and the live orbit camera (RayTracerApp::extractFirstCamera() result).
+    if (cmd == "GetHasAssetCamera") {
+        return std::string("HasAssetCamera:") + (app_ && app_->hasAssetCamera() ? "1" : "0");
+    }
+
+    if (cmd == "GetUseAssetCamera") {
+        return std::string("UseAssetCamera:") + (app_ && app_->useAssetCamera() ? "1" : "0");
+    }
+
+    if (cmd.rfind("SetUseAssetCamera:", 0) == 0) {
+        if (!app_) return "Error:no app";
+        int v;
+        if (!tryInt(cmd.substr(18), v)) return "Error:invalid int";
+        // Same contract as Universe's SetUseAssetCamera: enabling with no captured asset camera
+        // is a caller error, not a silent no-op; disabling is always fine.
+        if (v != 0 && !app_->hasAssetCamera()) return "Error:no asset camera";
+        app_->setUseAssetCamera(v != 0);
+        return "OK";
+    }
+
+    // Phase 4B item 5 "report the raster/offline diff".
+    if (cmd.rfind("SaveRayTraceResult:", 0) == 0) {
+        if (!app_) return "Error:no app";
+        const std::string path = cmd.substr(19);
+        return app_->saveRayTraceResult(path) ? "OK:saved " + path : "Error:no ray trace result to save";
+    }
+
+    if (cmd.rfind("CompareImages:", 0) == 0) {
+        const auto parts = splitCsv(cmd.substr(14));
+        if (parts.size() != 2) return "Error:CompareImages requires pathA,pathB";
+        return compareImages(parts[0], parts[1]);
     }
 
     return "Error:unknown command '" + cmd + "'";

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MenuPanel.h"
+#include "RayTracerApp.h"
 #include "imgui.h"
 
 using namespace Phantom::Gltf;
@@ -49,6 +50,21 @@ void MenuPanel::onImGui()
             ImGui::Text("Meshes   : %d", (int)doc->meshes.size());
             ImGui::Text("Materials: %d", (int)doc->materials.size());
             ImGui::Text("Textures : %d", (int)doc->textures.size());
+        }
+    }
+
+    // --- Phase 4B item 5 "same camera asset": glTF's own camera vs. the live orbit camera ---
+    if (app_) {
+        ImGui::Separator();
+        const bool hasAssetCam = app_->hasAssetCamera();
+        if (!hasAssetCam) ImGui::BeginDisabled();
+        bool useAssetCam = app_->useAssetCamera();
+        if (ImGui::Checkbox("Use Asset Camera", &useAssetCam))
+            app_->setUseAssetCamera(useAssetCam);
+        if (!hasAssetCam) ImGui::EndDisabled();
+        if (!hasAssetCam) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(no Perspective camera in this glTF)");
         }
     }
 

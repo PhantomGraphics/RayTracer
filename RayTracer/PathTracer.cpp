@@ -271,6 +271,14 @@ public:
     virtual bool scatter(const Ray& rayIn, const HitRecord& record, Vec3& attenuation, Ray& scattered, Random& random) const = 0;
 
     virtual Vec3 emitted(double /*u*/, double /*v*/) const { return Vec3(0.0, 0.0, 0.0); }
+
+    // BRDF value (not importance-sampled) used to evaluate explicit RtLight sources via next-
+    // event estimation. Default: no direct-light response (Cornell Box materials rely solely on
+    // emissive DiffuseLight quads, unaffected by RtLight). PbrMaterial overrides this with its
+    // diffuse (Lambertian) lobe only -- the specular lobe is still handled by the existing
+    // importance-sampled indirect path in scatter(), so it is intentionally excluded here to
+    // avoid double counting.
+    virtual Vec3 directLightBRDF(const HitRecord& /*record*/) const { return Vec3(0.0); }
 };
 
 class Lambertian : public Material {
@@ -426,7 +434,46 @@ static Vec3 gradientSky(const Vec3& dir)
     return Vec3(1.0) * (1.0 - t) + Vec3(0.5, 0.7, 1.0) * t;
 }
 
-static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& random)
+// Next-event estimation against explicit RtLight sources: casts one shadow ray per light from
+// the hit point and returns the sum of unoccluded contributions (BRDF is applied by the caller).
+// Directional lights are treated as infinitely far (no distance falloff, shadow ray unbounded);
+// point lights get inverse-square falloff and a shadow ray clipped to the light's distance.
+static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
+                                  const std::vector<RtLight>& lights)
+{
+    Vec3 sum(0.0);
+    for (const auto& light : lights) {
+        Vec3   toLight;
+        double maxDist = kInfinity;
+        double falloff = 1.0;
+
+        if (light.type == RtLight::Type::Point) {
+            const Vec3 lightPos(light.position[0], light.position[1], light.position[2]);
+            const Vec3 delta = lightPos - record.position;
+            const double distSq = Math::getLengthSquared(delta);
+            if (distSq < 1e-12) continue;
+            maxDist  = std::sqrt(distSq);
+            toLight  = delta / maxDist;
+            falloff  = 1.0 / std::max(distSq, 1e-6);
+        } else {
+            toLight = -glm::normalize(Vec3(light.direction[0], light.direction[1], light.direction[2]));
+        }
+
+        const double ndotl = glm::dot(record.normal, toLight);
+        if (ndotl <= 0.0) continue;
+
+        const Ray shadowRay{ record.position, toLight };
+        HitRecord shadowRec;
+        if (world.hit(shadowRay, 1e-4, maxDist - 1e-3, shadowRec)) continue; // occluded
+
+        const Vec3 lightColor(light.color[0], light.color[1], light.color[2]);
+        sum += lightColor * (light.intensity * falloff * ndotl);
+    }
+    return sum;
+}
+
+static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& random,
+                       const std::vector<RtLight>& lights)
 {
     if (depth <= 0) return Vec3(0.0);
 
@@ -435,15 +482,23 @@ static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& 
         return gradientSky(ray.direction);
 
     const Vec3 emitted = record.material->emitted(record.u, record.v);
+
+    Vec3 direct(0.0);
+    if (!lights.empty()) {
+        const Vec3 brdf = record.material->directLightBRDF(record);
+        if (brdf.x > 0.0 || brdf.y > 0.0 || brdf.z > 0.0)
+            direct = brdf * sampleDirectLighting(record, world, lights);
+    }
+
     Ray  scattered;
     Vec3 attenuation;
     if (!record.material->scatter(ray, record, attenuation, scattered, random))
-        return emitted;
+        return emitted + direct;
 
-    const Vec3 indirect = traceGltf(scattered, world, depth - 1, random);
-    return emitted + Vec3(attenuation.x * indirect.x,
-                          attenuation.y * indirect.y,
-                          attenuation.z * indirect.z);
+    const Vec3 indirect = traceGltf(scattered, world, depth - 1, random, lights);
+    return emitted + direct + Vec3(attenuation.x * indirect.x,
+                                    attenuation.y * indirect.y,
+                                    attenuation.z * indirect.z);
 }
 
 // ---------------------------------------------------------------------------
@@ -628,6 +683,19 @@ public:
         if (m_emissiveTex)
             return srgbToLinear(m_emissiveTex->sample(u, v)) * m_emission;
         return m_emission;
+    }
+
+    Vec3 directLightBRDF(const HitRecord& record) const override
+    {
+        const Vec3 effectiveAlbedo = m_baseColorTex
+            ? srgbToLinear(m_baseColorTex->sample(record.u, record.v))
+            : m_albedo;
+        double effectiveMetallic = m_metallic;
+        if (m_metalRoughTex) {
+            effectiveMetallic = m_metalRoughTex->sample(record.u, record.v).z; // B channel
+        }
+        // Lambertian diffuse lobe only (see base-class doc comment) -- metals have no diffuse term.
+        return effectiveAlbedo * ((1.0 - effectiveMetallic) / kPi);
     }
 
     bool scatter(const Ray& rayIn,
@@ -1074,7 +1142,8 @@ static bool renderTriangleSceneWithTextures(
     const RtCameraSpec&            cam,
     const RenderSettings&          settings,
     Graphics::Imageuc&             output,
-    const std::vector<RtTexture>&  textures)
+    const std::vector<RtTexture>&  textures,
+    const std::vector<RtLight>&    lights)
 {
     if (settings.width <= 0 || settings.height <= 0 ||
         settings.samplesPerPixel <= 0 || settings.maxDepth <= 0)
@@ -1130,7 +1199,7 @@ static bool renderTriangleSceneWithTextures(
     renderRowsParallel(output, camera, settings.width, settings.height,
                         settings.samplesPerPixel, settings.randomSeed,
                         [&](const Ray& ray, Random& random) {
-                            return traceGltf(ray, world, settings.maxDepth, random);
+                            return traceGltf(ray, world, settings.maxDepth, random, lights);
                         });
 
     const auto end = std::chrono::steady_clock::now();
@@ -1181,10 +1250,11 @@ bool renderTriangleScene(const std::vector<RtTriangle>& triangles,
         cam.fovDeg,
         static_cast<double>(settings.width) / settings.height);
 
+    static const std::vector<RtLight> kNoLights;
     renderRowsParallel(output, camera, settings.width, settings.height,
                         settings.samplesPerPixel, settings.randomSeed,
                         [&](const Ray& ray, Random& random) {
-                            return traceGltf(ray, world, settings.maxDepth, random);
+                            return traceGltf(ray, world, settings.maxDepth, random, kNoLights);
                         });
 
     const auto end = std::chrono::steady_clock::now();
@@ -1237,7 +1307,16 @@ bool PathTracer::render(const std::vector<RtTriangle>& triangles,
                         Graphics::Imageuc& output,
                         const std::vector<RtTexture>& textures) const
 {
-    return renderTriangleSceneWithTextures(triangles, cam, settings_, output, textures);
+    return renderTriangleSceneWithTextures(triangles, cam, settings_, output, textures, {});
+}
+
+bool PathTracer::render(const std::vector<RtTriangle>& triangles,
+                        const RtCameraSpec& cam,
+                        Graphics::Imageuc& output,
+                        const std::vector<RtTexture>& textures,
+                        const std::vector<RtLight>& lights) const
+{
+    return renderTriangleSceneWithTextures(triangles, cam, settings_, output, textures, lights);
 }
 
 SceneRenderResult PathTracer::renderScene(const std::string& scenePath,

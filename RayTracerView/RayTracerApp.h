@@ -6,6 +6,7 @@
 #include "../../CGLib/VkAppBase/ScenarioRunner/ScenarioBrowserPanel.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 #include "../../CGLib/GltfRenderer/Renderer/GltfSceneRenderer.h"
+#include "../RayTracer/PathTracer.h"
 #include "MenuPanel.h"
 #include "RayTraceResultPanel.h"
 #include "CommandDispatcher.h"
@@ -19,6 +20,17 @@ public:
     RayTracerApp(int width, int height, const std::string& title);
 
     void loadGltf(const std::filesystem::path& path);
+
+    // Phase 4B item 5 "same camera asset": the document's own first Perspective camera node,
+    // captured by loadGltf()/reloadFile() (same "first instance" policy as Universe's
+    // Renderer::applyAssetCamera()). Orthographic-only/camera-less documents leave this unset.
+    bool hasAssetCamera() const { return assetCamera_.has_value(); }
+    bool useAssetCamera() const { return useAssetCamera_; }
+    void setUseAssetCamera(bool use) { useAssetCamera_ = use && hasAssetCamera(); }
+
+    // Phase 4B item 5 "report the raster/offline diff": saves the most recently completed
+    // path-traced render (see RayTraceResultPanel::saveResult()) to a PNG file.
+    bool saveRayTraceResult(const std::string& path) const { return resultPanel_.saveResult(path); }
 
     bool loadScenario(const std::string& jsonPath) override { return runner_.load(jsonPath); }
     void setExitOnScenarioComplete(bool v)         override { exitOnComplete_ = v; }
@@ -51,6 +63,9 @@ private:
     bool        screenshotPending_ = false;
     std::string screenshotPendingPath_;
     bool        rayTracePending_ = false;
+
+    std::optional<Phantom::RayTracer::RtCameraSpec> assetCamera_;
+    bool useAssetCamera_ = false;
 
     bool exitOnComplete_ = true;
     int  exitCode_ = 0;

@@ -4,6 +4,7 @@
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/VulkanImage.h"
+#include "../../CGLib/Graphics/ImageFileWriter.h"
 
 #include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"
@@ -131,21 +132,30 @@ void RayTraceResultPanel::triggerRenderGltf(
     const Phantom::RayTracer::RtCameraSpec&         cam,
     const Phantom::RayTracer::RenderSettings&       settings,
     std::vector<Phantom::RayTracer::RtTriangle>     triangles,
-    std::vector<Phantom::RayTracer::RtTexture>      textures)
+    std::vector<Phantom::RayTracer::RtTexture>      textures,
+    std::vector<Phantom::RayTracer::RtLight>        lights)
 {
     if (rendering_) return;
     rendering_ = true;
 
     future_ = std::async(std::launch::async,
         [cam, settings,
-         tris = std::move(triangles),
-         texs = std::move(textures)]() -> Phantom::Graphics::Imageuc
+         tris   = std::move(triangles),
+         texs   = std::move(textures),
+         lights = std::move(lights)]() -> Phantom::Graphics::Imageuc
         {
             Phantom::Graphics::Imageuc img;
             Phantom::RayTracer::PathTracer tracer(settings);
-            tracer.render(tris, cam, img, texs);
+            tracer.render(tris, cam, img, texs, lights);
             return img;
         });
+}
+
+bool RayTraceResultPanel::saveResult(const std::string& path) const
+{
+    if (!hasResult()) return false;
+    Phantom::Graphics::ImageFileWriter writer;
+    return writer.write(path, lastResult_);
 }
 
 void RayTraceResultPanel::destroyTexture()
@@ -197,6 +207,7 @@ void RayTraceResultPanel::onImGui()
             Phantom::Graphics::Imageuc img = future_.get();
             vkDeviceWaitIdle(ctx_->getDevice());
             uploadTexture(img);
+            lastResult_ = std::move(img);
             rendering_ = false;
         }
     }
