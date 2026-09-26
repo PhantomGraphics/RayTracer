@@ -7,24 +7,28 @@ param(
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot  = $scriptDir
-while ($repoRoot -and -not (Test-Path (Join-Path $repoRoot "Phantom2026.sln"))) {
-    $parent = Split-Path -Parent $repoRoot
-    if ($parent -eq $repoRoot) { $repoRoot = $null; break }
-    $repoRoot = $parent
+$preset    = "windows-$($Configuration.ToLower())"
+# RayTracerView.exe is built from the CMake source dir below. Phantom and CGLib each have their own
+# CMakePresets.json whose build\<preset>\ mirrors the source tree, so try every enclosing
+# preset root (innermost first) and use the first one that has built it.
+$srcDir    = [System.IO.Path]::GetFullPath((Join-Path $scriptDir ".."))
+$exe       = $null
+$tried     = @()
+for ($root = $srcDir; $root; $root = Split-Path -Parent $root) {
+    if (-not (Test-Path (Join-Path $root "CMakePresets.json"))) { continue }
+    $rel       = $srcDir.Substring($root.Length).TrimStart('\')
+    $candidate = (@($root, "build", $preset, $rel, "RayTracerView.exe") | Where-Object { $_ }) -join '\'
+    $tried    += $candidate
+    if (Test-Path $candidate) { $exe = $candidate; break }
 }
-if (-not $repoRoot) {
-    Write-Host "ERROR: Could not locate repository root (Phantom2026.sln)"
-    exit 1
-}
-$preset  = "windows-$($Configuration.ToLower())"
-$exe     = Join-Path $repoRoot "build\$preset\RayTracer\RayTracerView.exe"
 $scenDir = Join-Path $scriptDir "scenarios"
 
-if (-not (Test-Path $exe)) {
-    Write-Host "ERROR: Executable not found: $exe"
+if (-not $exe) {
+    Write-Host "ERROR: Executable not found. Tried:"
+    $tried | ForEach-Object { Write-Host "  $_" }
     exit 1
 }
+Write-Host "Using $exe"
 
 $scenarios = Get-ChildItem "$scenDir\*.json" | Sort-Object Name
 if ($scenarios.Count -eq 0) {
