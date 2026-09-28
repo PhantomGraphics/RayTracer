@@ -159,3 +159,8 @@ endif()
 else()
     message(WARNING "RayTracer: vulkan/vulkan.h not found -- RayTracerView is skipped.")
 endif()
+
+# Precompiled headers (cmake/PhantomPch.cmake): RayTracerView's own pch.h. RayTracerCore
+# and RayTracerTest have too few TUs for a PCH to pay for itself.
+include(PhantomPch)
+phantom_use_pch(RayTracerView ${RAYTRACER_ROOT}/RayTracerView/pch.h)
