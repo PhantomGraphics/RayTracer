@@ -123,37 +123,26 @@ std::string CommandDispatcher::cmdCheckCommandCatalog() {
 }
 
 void CommandDispatcher::dispatch(const std::string& command) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    inputQueue_.push(command);
+    queue_.submit(command);
 }
 
 std::vector<std::string> CommandDispatcher::collectResponses() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::vector<std::string> out;
-    while (!outputQueue_.empty()) {
-        out.push_back(std::move(outputQueue_.front()));
-        outputQueue_.pop();
-    }
-    return out;
+    return queue_.collectResponses();
 }
 
 void CommandDispatcher::processQueue() {
-    std::queue<std::string> local;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::swap(local, inputQueue_);
-    }
+    std::queue<std::string> local = queue_.takeAll();
 
     while (!local.empty()) {
         std::string cmd = std::move(local.front());
         local.pop();
         const bool fromUi = takeUiMark(cmd);
         std::string resp = route(cmd);
-        if (resp.empty() && fromUi) ++silentDeferred_;   // answered later by a signal*(); drop that
-        if (!resp.empty() && !fromUi) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            outputQueue_.push(std::move(resp));
+        if (resp.empty() && fromUi) {   // answered later by a signal*(); drop that
+            std::lock_guard<std::mutex> lock(deferredMutex_);
+            ++silentDeferred_;
         }
+        if (!resp.empty() && !fromUi) queue_.respond(std::move(resp));
     }
 }
 
@@ -164,9 +153,11 @@ std::optional<std::filesystem::path> CommandDispatcher::takePendingLoad() {
 }
 
 void CommandDispatcher::pushDeferred(std::string resp) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (silentDeferred_ > 0) { --silentDeferred_; return; }
-    outputQueue_.push(std::move(resp));
+    {
+        std::lock_guard<std::mutex> lock(deferredMutex_);
+        if (silentDeferred_ > 0) { --silentDeferred_; return; }
+    }
+    queue_.respond(std::move(resp));
 }
 
 void CommandDispatcher::signalLoaded(bool ok, const std::string& msg) {
