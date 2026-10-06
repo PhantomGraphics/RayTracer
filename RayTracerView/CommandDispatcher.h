@@ -2,6 +2,7 @@
 
 #include "../../CGLib/VkAppBase/ScenarioRunner/IScenarioDispatcher.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/UiCommand.h"
+#include "../../CGLib/VkAppBase/ScenarioRunner/CommandQueue.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 #include "../../CGLib/GltfRenderer/Renderer/GltfSceneRenderer.h"
 
@@ -64,7 +65,6 @@ private:
     int silentDeferred_ = 0;
     void pushDeferred(std::string resp);
 
-    std::mutex              mutex_;
-    std::queue<std::string> inputQueue_;
-    std::queue<std::string> outputQueue_;
+    CommandQueue queue_;
+    std::mutex   deferredMutex_;   // guards silentDeferred_ (set on the render thread, read by signal*())
 };
