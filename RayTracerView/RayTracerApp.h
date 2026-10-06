@@ -4,6 +4,7 @@
 #include "../../CGLib/VkAppBase/ScenarioRunner/ScenarioRunner.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/IScenarioHost.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/ScenarioBrowserPanel.h"
+#include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 #include "../../CGLib/GltfRenderer/Renderer/GltfSceneRenderer.h"
 #include "../RayTracer/PathTracer.h"
@@ -46,6 +47,8 @@ protected:
     void onInit()                      override;
     void onUpdate(uint32_t frameIndex) override;
     void onSwapChainCreated()          override;
+    void onImGui()                     override;
+    void onImGuiReady()                override;
     void onCleanup()                   override;
 
 private:
@@ -54,6 +57,7 @@ private:
     MenuPanel   menuPanel_;
     RayTraceResultPanel  resultPanel_;
 
+    ViewShell         shell_;   // Command / Outliner windows
     CommandDispatcher dispatcher_;
     ScenarioRunner             runner_;
     ScenarioBrowserPanel       scenarioBrowser_;

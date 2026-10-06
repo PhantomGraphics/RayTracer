@@ -22,10 +22,57 @@ RayTracerApp::RayTracerApp(int width, int height, const std::string& title)
     scenarioBrowser_.setHost(this);
     scenarioBrowser_.setDefaultFolder("scenarios");
 
+    // Standard screen: render area + menu + Command + Outliner; the rest is
+    // opened from the View menu / outliner.
+    shell_.setDispatcher(&dispatcher_);
+    shell_.registerPanel("RayTracer View", {0.70f, 0.00f, 0.30f, 0.66f});
+    shell_.registerPanel("Ray Trace Result", {0.30f, 0.05f, 0.40f, 0.55f});
+    shell_.registerPanel("Scenario Browser", {0.30f, 0.05f, 0.40f, 0.55f});
+    shell_.setOutlinerProvider([this] {
+        std::vector<ViewShell::OutlinerItem> items;
+        if (!doc_.meshes.empty())
+            items.push_back({1, "Scene: " + std::to_string(doc_.meshes.size()) + " mesh(es), " +
+                                std::to_string(doc_.materials.size()) + " material(s)", "RayTracer View"});
+        if (hasAssetCamera())
+            items.push_back({2, std::string("Camera: glTF asset camera") + (useAssetCamera_ ? " (in use)" : ""), "RayTracer View"});
+        if (resultPanel_.hasResult())
+            items.push_back({3, "Ray trace result: " + std::to_string(resultPanel_.lastWidth()) + "x" +
+                                std::to_string(resultPanel_.lastHeight()), "Ray Trace Result"});
+        return items;
+    });
+    menuPanel_.setShell(&shell_);
+    menuPanel_.setSubmit([this](const std::string& c) { dispatcher_.submitUi(c); });
+    resultPanel_.setShell(&shell_);
+
     add(&renderer_);
     add(&menuPanel_);
     add(&resultPanel_);
-    add(&scenarioBrowser_);
+    // The scenario browser draws through the shell in onImGui().
+}
+
+void RayTracerApp::onImGuiReady()
+{
+    // Context exists, imgui.ini is not read until the first frame.
+    shell_.installSettings();
+}
+
+void RayTracerApp::onImGui()
+{
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Quit")) getWindow().close();
+            ImGui::EndMenu();
+        }
+        shell_.drawViewMenu();
+        ImGui::EndMainMenuBar();
+    }
+    shell_.drawWindows();
+    ::VKG::VkAppBase::onImGui();
+    scenarioBrowser_.pumpQueue();
+    if (shell_.beginPanel("Scenario Browser")) {
+        scenarioBrowser_.drawEmbedded();
+        shell_.endPanel();
+    }
 }
 
 void RayTracerApp::onInit()
@@ -58,6 +105,15 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
 
     dispatcher_.processQueue();
 
+    // Single place that collects responses: first the ones for commands typed
+    // into the Command window (scenario commands included -- they run through
+    // it too), the rest go to the running scenario. Deferred answers (LoadFile,
+    // SaveScreenshot, RunRayTrace) arrive in a later frame and are matched by order.
+    auto responses = dispatcher_.collectResponses();
+    shell_.consumeResponses(responses);
+    shell_.setScenarioActive(runner_.isActive());
+    menuPanel_.setLocked(runner_.isActive());
+
     if (auto p = dispatcher_.takePendingLoad()) {
         const bool ok = std::filesystem::exists(*p);
         if (ok) reloadFile(*p);
@@ -85,8 +141,7 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
     }
 
     if (runner_.isActive()) {
-        auto responses = dispatcher_.collectResponses();
-        if (runner_.tick(dispatcher_, responses)) {
+        if (runner_.tick(shell_.scenarioDispatcher(), responses)) {
             if (runner_.hasFailed()) {
                 fprintf(stderr, "[Scenario] FAILED: %s\n", runner_.failMessage().c_str());
                 exitCode_ = 1;
@@ -144,6 +199,8 @@ void RayTracerApp::reloadFile(const std::filesystem::path& path)
 
 void RayTracerApp::onRayTrace(int width, int height, int spp, int depth)
 {
+    shell_.setPanelVisible("Ray Trace Result", true);   // show the result once a trace starts
+
     // Phase 4B item 5 "same camera asset": prefer the glTF's own camera when the user has
     // opted into it; otherwise use the live orbit camera (the default -- keeps the offline
     // render directly comparable to whatever the raster viewport is currently showing).
@@ -186,13 +243,18 @@ void RayTracerApp::onRayTrace(int width, int height, int spp, int depth)
 void RayTracerApp::setupCallbacks()
 {
     auto& win = getWindow();
+    // Camera input is ignored while ImGui owns the mouse and while a scenario
+    // runs; a release is always forwarded so a drag can end.
     win.onMouseButton = [this](int btn, int action, int) {
-        if (btn == 0) renderer_.handleMouseButton(action == 1);
+        if (btn != 0) return;
+        if (action == 1 && (ImGui::GetIO().WantCaptureMouse || runner_.isActive())) return;
+        renderer_.handleMouseButton(action == 1);
     };
     win.onCursorPos = [this](double x, double y) {
         renderer_.handleMouseMove(x, y);
     };
     win.onScroll = [this](double, double dy) {
+        if (ImGui::GetIO().WantCaptureMouse || runner_.isActive()) return;
         renderer_.handleScroll(dy);
     };
 }

@@ -13,6 +13,8 @@ namespace Phantom::VKG {
     class VulkanCommandPool;
 }
 
+class ViewShell;
+
 class RayTraceResultPanel : public ::VKG::IVkUIPanel {
 public:
     void init(const Phantom::VKG::VulkanContext* ctx, const Phantom::VKG::VulkanCommandPool* pool);
@@ -39,9 +41,13 @@ public:
 
     void onImGui() override;
 
+    // The window is a shell panel (hidden until opened or until a ray trace starts).
+    void setShell(ViewShell* s) { shell_ = s; }
+
     void cleanup(VkDevice device);
 
 private:
+    ViewShell* shell_ = nullptr;
     const Phantom::VKG::VulkanContext*     ctx_  = nullptr;
     const Phantom::VKG::VulkanCommandPool* pool_ = nullptr;
 

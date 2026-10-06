@@ -2,6 +2,7 @@
 #include "MenuPanel.h"
 #include "RayTracerApp.h"
 #include "imgui.h"
+#include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 
 using namespace Phantom::Gltf;
 
@@ -20,14 +21,15 @@ void MenuPanel::init(
 
 void MenuPanel::onImGui()
 {
-    ImGui::Begin("RayTracer View");
+    if (!shell_ || !shell_->beginPanel("RayTracer View")) return;
+    ImGui::BeginDisabled(locked_);
 
     // --- File section ---
     fileOpenView_.show();
     if (ImGui::Button("Load")) {
         const std::string path = fileOpenView_.getFileName();
-        if (!path.empty() && onFileOpen_)
-            onFileOpen_(std::filesystem::path(path));
+        if (!path.empty())
+            send("LoadFile:" + path);
     }
 
     ImGui::Separator();
@@ -41,7 +43,12 @@ void MenuPanel::onImGui()
     // --- Camera info ---
     if (renderer_) {
         ImGui::Separator();
-        ImGui::SliderFloat("Camera Distance", renderer_->camDistPtr(), 0.1f, 100.f);
+        float camDist = *renderer_->camDistPtr();
+        if (ImGui::SliderFloat("Camera Distance", &camDist, 0.1f, 100.f)) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%.9g", camDist);
+            send(std::string("SetCamDist:") + buf);
+        }
         ImGui::SliderFloat3("Camera Target",  &renderer_->camTargetPtr()->x, -10.f, 10.f);
 
         const GltfDocument* doc = renderer_->document();
@@ -60,7 +67,7 @@ void MenuPanel::onImGui()
         if (!hasAssetCam) ImGui::BeginDisabled();
         bool useAssetCam = app_->useAssetCamera();
         if (ImGui::Checkbox("Use Asset Camera", &useAssetCam))
-            app_->setUseAssetCamera(useAssetCam);
+            send(useAssetCam ? "SetUseAssetCamera:1" : "SetUseAssetCamera:0");
         if (!hasAssetCam) ImGui::EndDisabled();
         if (!hasAssetCam) {
             ImGui::SameLine();
@@ -97,8 +104,9 @@ void MenuPanel::onImGui()
     if (rendering_) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("Ray Trace") && onRayTrace_) {
-        onRayTrace_(rtWidth_, rtHeight_, rtSpp_, rtDepth_);
+    if (ImGui::Button("Ray Trace")) {
+        send("RunRayTrace:" + std::to_string(rtWidth_) + "," + std::to_string(rtHeight_) + "," +
+             std::to_string(rtSpp_) + "," + std::to_string(rtDepth_));
     }
     if (rendering_) {
         ImGui::EndDisabled();
@@ -106,5 +114,6 @@ void MenuPanel::onImGui()
         ImGui::Text("Rendering...");
     }
 
-    ImGui::End();
+    ImGui::EndDisabled();
+    shell_->endPanel();
 }
