@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "RayTraceResultPanel.h"
+#include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
@@ -212,7 +213,7 @@ void RayTraceResultPanel::onImGui()
         }
     }
 
-    ImGui::Begin("Ray Trace Result");
+    if (!shell_ || !shell_->beginPanel("Ray Trace Result")) return;
 
     if (rendering_) {
         ImGui::Text("Rendering... please wait.");
@@ -226,7 +227,7 @@ void RayTraceResultPanel::onImGui()
         ImGui::Text("No result yet. Press \"Ray Trace\" to render.");
     }
 
-    ImGui::End();
+    shell_->endPanel();
 }
 
 void RayTraceResultPanel::cleanup(VkDevice)

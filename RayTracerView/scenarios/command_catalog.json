@@ -1,0 +1,7 @@
+{
+  "name": "command_catalog",
+  "steps": [
+    { "label": "Every catalog entry is routed",    "command": "CheckCommandCatalog", "expect": "OK" },
+    { "label": "Unknown command reports an error", "command": "NoSuchCommand",       "expect_prefix": "Error:unknown command" }
+  ]
+}

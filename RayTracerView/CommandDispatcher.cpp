@@ -82,6 +82,46 @@ std::string compareImages(const std::string& pathA, const std::string& pathB) {
 
 } // namespace
 
+std::vector<CommandInfo> CommandDispatcher::commandCatalog() const {
+    return {
+        {"GetStatus", "", ""},
+        {"GetMeshCount", "", ""},
+        {"GetMaterialCount", "", ""},
+        {"GetTextureCount", "", ""},
+        {"GetCamDist", "", ""},
+        {"SetCamDist", "float", "Orbit camera distance"},
+        {"ResetCamera", "", ""},
+        {"LoadFile", "path", "Load a glTF/GLB (response arrives when loaded)"},
+        {"SaveScreenshot", "path", "Save the raster view as PNG (response arrives when written)"},
+        {"RunRayTrace", "w,h,spp,depth", "Offline path trace (response arrives when finished)"},
+        {"GetHasAssetCamera", "", ""},
+        {"GetUseAssetCamera", "", ""},
+        {"SetUseAssetCamera", "0|1", ""},
+        {"SaveRayTraceResult", "path", "Save the last ray-trace result as PNG"},
+        {"CompareImages", "pathA,pathB", "Mean/max difference of two PNGs"},
+    };
+}
+
+std::string CommandDispatcher::cmdCheckCommandCatalog() {
+    // Probe with a junk argument against a detached app/renderer: a routed name answers
+    // with its own validation error, only an unrouted one says "unknown command".
+    // LoadFile/SaveScreenshot/RunRayTrace queue work that answers later; scenarios cover them.
+    Phantom::Gltf::GltfSceneRenderer* const savedRenderer = renderer_;
+    RayTracerApp* const savedApp = app_;
+    renderer_ = nullptr;
+    app_ = nullptr;
+    std::string missing;
+    for (const auto& c : commandCatalog()) {
+        if (c.name == "LoadFile" || c.name == "SaveScreenshot" || c.name == "RunRayTrace") continue;
+        const std::string probe = c.args.empty() ? c.name : c.name + ":x";
+        if (route(probe).rfind("Error:unknown command", 0) == 0)
+            missing += (missing.empty() ? "" : ",") + c.name;
+    }
+    renderer_ = savedRenderer;
+    app_ = savedApp;
+    return missing.empty() ? "OK" : "Error:unrouted catalog entries: " + missing;
+}
+
 void CommandDispatcher::dispatch(const std::string& command) {
     std::lock_guard<std::mutex> lock(mutex_);
     inputQueue_.push(command);
@@ -107,8 +147,10 @@ void CommandDispatcher::processQueue() {
     while (!local.empty()) {
         std::string cmd = std::move(local.front());
         local.pop();
+        const bool fromUi = takeUiMark(cmd);
         std::string resp = route(cmd);
-        if (!resp.empty()) {
+        if (resp.empty() && fromUi) ++silentDeferred_;   // answered later by a signal*(); drop that
+        if (!resp.empty() && !fromUi) {
             std::lock_guard<std::mutex> lock(mutex_);
             outputQueue_.push(std::move(resp));
         }
@@ -121,13 +163,14 @@ std::optional<std::filesystem::path> CommandDispatcher::takePendingLoad() {
     return p;
 }
 
-void CommandDispatcher::signalLoaded(bool ok, const std::string& msg) {
+void CommandDispatcher::pushDeferred(std::string resp) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (ok) {
-        outputQueue_.push("OK:" + (msg.empty() ? std::string("loaded") : msg));
-    } else {
-        outputQueue_.push("Error:" + msg);
-    }
+    if (silentDeferred_ > 0) { --silentDeferred_; return; }
+    outputQueue_.push(std::move(resp));
+}
+
+void CommandDispatcher::signalLoaded(bool ok, const std::string& msg) {
+    pushDeferred(ok ? "OK:" + (msg.empty() ? std::string("loaded") : msg) : "Error:" + msg);
 }
 
 std::optional<std::filesystem::path> CommandDispatcher::takePendingScreenshot() {
@@ -137,8 +180,7 @@ std::optional<std::filesystem::path> CommandDispatcher::takePendingScreenshot() 
 }
 
 void CommandDispatcher::signalScreenshotDone(bool ok, const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    outputQueue_.push(ok ? "OK:saved " + path : "Error:screenshot failed");
+    pushDeferred(ok ? "OK:saved " + path : "Error:screenshot failed");
 }
 
 std::optional<CommandDispatcher::RayTraceRequest> CommandDispatcher::takePendingRayTrace() {
@@ -148,15 +190,12 @@ std::optional<CommandDispatcher::RayTraceRequest> CommandDispatcher::takePending
 }
 
 void CommandDispatcher::signalRayTraceDone(bool ok, int width, int height) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (ok) {
-        outputQueue_.push("OK:" + std::to_string(width) + "x" + std::to_string(height));
-    } else {
-        outputQueue_.push("Error:ray trace failed");
-    }
+    pushDeferred(ok ? "OK:" + std::to_string(width) + "x" + std::to_string(height) : "Error:ray trace failed");
 }
 
 std::string CommandDispatcher::route(const std::string& cmd) {
+    if (cmd == "CheckCommandCatalog") return cmdCheckCommandCatalog();
+
     if (cmd == "GetStatus") {
         return "OK";
     }

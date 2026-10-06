@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../CGLib/VkAppBase/ScenarioRunner/IScenarioDispatcher.h"
+#include "../../CGLib/VkAppBase/ScenarioRunner/UiCommand.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 #include "../../CGLib/GltfRenderer/Renderer/GltfSceneRenderer.h"
 
@@ -25,6 +26,11 @@ public:
 
     void dispatch(const std::string& command) override;
     std::vector<std::string> collectResponses() override;
+    std::vector<CommandInfo> commandCatalog() const override;
+
+    // GUI operations take the same queue and handlers as typed commands; the
+    // response is discarded (see UiCommand.h).
+    void submitUi(const std::string& cmd) { dispatch(markUiCommand(cmd)); }
 
     std::optional<std::filesystem::path> takePendingLoad();
     void signalLoaded(bool ok, const std::string& msg = {});
@@ -43,6 +49,7 @@ public:
 
 private:
     std::string route(const std::string& cmd);
+    std::string cmdCheckCommandCatalog();
 
     const Phantom::Gltf::GltfDocument* doc_ = nullptr;
     Phantom::Gltf::GltfSceneRenderer* renderer_ = nullptr;
@@ -51,6 +58,11 @@ private:
     std::optional<std::filesystem::path> pendingLoad_;
     std::optional<std::filesystem::path> pendingScreenshot_;
     std::optional<RayTraceRequest>       pendingRayTrace_;
+
+    // Deferred answers (LoadFile / SaveScreenshot / RunRayTrace) of GUI-originated
+    // commands: nobody reads them, so the matching signal*() drops one each.
+    int silentDeferred_ = 0;
+    void pushDeferred(std::string resp);
 
     std::mutex              mutex_;
     std::queue<std::string> inputQueue_;
