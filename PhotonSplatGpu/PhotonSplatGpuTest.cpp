@@ -182,6 +182,48 @@ TEST_F(PhotonSplatGpuTest, DepthTransportFluxBudgetResolutionAndRepeatability)
     EXPECT_FALSE(transport.build(gpu,scene,cfg,b)); EXPECT_TRUE(b.getPhotons().empty());
     EXPECT_TRUE(transport.getStats().bounces.empty());
 }
+TEST_F(PhotonSplatGpuTest, ParaboloidNearestDepthAndProjectionSwitch)
+{
+    auto scene=plane(2); const auto far=plane(3); scene.insert(scene.end(),far.begin(),far.end());
+    PhotonGBuffer buffer;
+    ASSERT_TRUE(gpu.rasterizeParaboloid(scene,camera(),32,buffer,0.01,10,3))<<gpu.getLastError();
+    std::size_t hits=0;
+    for(int y=0;y<32;++y) for(int x=0;x<32;++x) {
+        const auto& p=buffer.receivers[y*32+x];
+        const double u=2*(x+0.5)/32-1,v=2*(y+0.5)/32-1;
+        if(u*u+v*v>1) EXPECT_EQ(p.triangle,-1);
+        if(u*u+v*v<0.08) EXPECT_GE(p.triangle,0);
+        if(p.triangle>=0) { ++hits; EXPECT_LT(p.triangle,2); EXPECT_NEAR(p.position.z,2,1e-4); }
+    }
+    EXPECT_GT(hits,100u);
+    ASSERT_TRUE(gpu.rasterize(scene,camera(),32,32,buffer,0.01,10));
+    ASSERT_TRUE(gpu.rasterizeParaboloid(scene,camera(),32,buffer,0.01,10,3));
+    auto side=camera(); side.lookAt[0]=1; side.lookAt[2]=0;
+    ASSERT_TRUE(gpu.rasterizeParaboloid(plane(2),side,32,buffer,0.01,10,3));
+    hits=0;
+    for(const auto& p:buffer.receivers) if(p.triangle>=0) { ++hits; EXPECT_GE(p.position.x,-1e-5); EXPECT_NEAR(p.position.z,2,1e-4); }
+    EXPECT_GT(hits,0u);
+    ASSERT_TRUE(gpu.rasterizeParaboloid(plane(-2),camera(),32,buffer,0.01,10,3));
+    for(const auto& p:buffer.receivers) EXPECT_EQ(p.triangle,-1);
+}
+TEST_F(PhotonSplatGpuTest, ParaboloidTransportUsesOneMapAndConservesFlux)
+{
+    auto scene=plane(2); auto light=plane(0,true);
+    for(auto& t:light) t.emission[0]=t.emission[1]=t.emission[2]=1;
+    scene.insert(scene.end(),light.begin(),light.end());
+    DepthPhotonSettings cfg; cfg.projection=DepthPhotonProjection::Paraboloid;
+    cfg.lightSamples=1; cfg.firstResolution=16; cfg.minResolution=8; cfg.maxDepth=2;
+    cfg.selection.maxParticles=2; cfg.storeDirectPhotons=true;
+    DepthPhotonTransport transport; PhotonMap output;
+    ASSERT_TRUE(transport.build(gpu,scene,cfg,output))<<transport.getLastError();
+    ASSERT_FALSE(output.getPhotons().empty()); ASSERT_EQ(transport.getStats().bounces.size(),2u);
+    for(const auto& s:transport.getStats().bounces) {
+        EXPECT_EQ(s.depthMaps,s.sources);
+        for(int c=0;c<3;++c) EXPECT_NEAR(s.launchedFlux[c],s.arrivedFlux[c]+s.escapedFlux[c],1e-9);
+    }
+    cfg.paraboloidSubdivision=7; EXPECT_FALSE(transport.build(gpu,scene,cfg,output));
+    EXPECT_TRUE(output.getPhotons().empty());
+}
 TEST_F(PhotonSplatGpuTest, DepthTransportRejectsUnsupportedInputs)
 {
     auto scene=plane(2); for(auto& t:scene) t.emission[0]=1;

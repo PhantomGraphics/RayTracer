@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <limits>
 
 namespace Phantom::RayTracer {
@@ -149,11 +150,12 @@ struct PhotonSplatGpu::Impl {
     VkSampler sampler=VK_NULL_HANDLE;
     VkQueryPool queries=VK_NULL_HANDLE;
     VKG::VulkanPipeline geometryPipeline,splatPipeline;
-    VKG::PipelineConfig geometryConfig,splatConfig;
+    VKG::PipelineConfig geometryConfig,splatConfig,paraboloidConfig;
     Target geometry,accumulation;
     Buffer cameraBuffer,trianglesBuffer,photonsBuffer,readback;
     int width=0,height=0;
     bool ready=false;
+    bool paraboloidTarget=false;
     std::string error;
     PhotonSplatStats stats;
     bool fail(const char* message) { error=message; return false; }
@@ -217,6 +219,9 @@ bool PhotonSplatGpu::create(VKG::VulkanContext& context,const VKG::VulkanCommand
     s.geometryConfig={}; s.geometryConfig.vertSpv=VKG::loadSPV((dir/"gbuffer.vert.spv").string());
     s.geometryConfig.fragSpv=VKG::loadSPV((dir/"gbuffer.frag.spv").string());
     s.geometryConfig.descriptorSetLayout=s.layout; s.geometryConfig.cullMode=VK_CULL_MODE_NONE;
+    s.paraboloidConfig=s.geometryConfig;
+    s.paraboloidConfig.vertSpv=VKG::loadSPV((dir/"paraboloid.vert.spv").string());
+    s.paraboloidConfig.fragSpv=VKG::loadSPV((dir/"paraboloid.frag.spv").string());
     s.splatConfig={}; s.splatConfig.vertSpv=VKG::loadSPV((dir/"splat.vert.spv").string());
     s.splatConfig.fragSpv=VKG::loadSPV((dir/"splat.frag.spv").string());
     s.splatConfig.descriptorSetLayout=s.layout; s.splatConfig.cullMode=VK_CULL_MODE_NONE;
@@ -238,9 +243,17 @@ bool PhotonSplatGpu::rasterize(const std::vector<RtTriangle>& triangles,const Rt
     return renderImpl(triangles,empty,camera,width,height,1,unused,receivers,
         PhotonContribution::All,nearPlane,farPlane,true);
 }
+bool PhotonSplatGpu::rasterizeParaboloid(const std::vector<RtTriangle>& triangles,const RtCameraSpec& camera,
+    int resolution,PhotonGBuffer& receivers,double nearPlane,double farPlane,int subdivision)
+{
+    PhotonMap empty; Graphics::Imagef unused;
+    return renderImpl(triangles,empty,camera,resolution,resolution,1,unused,receivers,
+        PhotonContribution::All,nearPlane,farPlane,true,true,subdivision);
+}
 bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const PhotonMap& map,
     const RtCameraSpec& camera,int width,int height,double radius,Graphics::Imagef& indirect,
-    PhotonGBuffer& receivers,PhotonContribution contribution,double nearPlane,double farPlane,bool geometryOnly)
+    PhotonGBuffer& receivers,PhotonContribution contribution,double nearPlane,double farPlane,bool geometryOnly,
+    bool paraboloid,int subdivision)
 {
     auto& s=*impl_; s.stats={}; s.error.clear(); const auto uploadStart=std::chrono::steady_clock::now();
     const V eye=vector(camera.lookFrom),target=vector(camera.lookAt),up=vector(camera.up);
@@ -252,11 +265,15 @@ bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const Photo
         || glm::length(target-eye)<1e-10 || glm::length(glm::cross(target-eye,up))<1e-10
         || (contribution!=PhotonContribution::All && contribution!=PhotonContribution::Direct && contribution!=PhotonContribution::Indirect && contribution!=PhotonContribution::Caustic)) return s.fail("Invalid splat parameters");
     const V forward=glm::normalize(target-eye),right=glm::normalize(glm::cross(forward,up)),vertical=glm::cross(right,forward);
+    if(paraboloid && (!geometryOnly || width!=height || subdivision<0 || subdivision>6
+        || s.paraboloidConfig.vertSpv.empty() || s.paraboloidConfig.fragSpv.empty()))
+        return s.fail("Invalid paraboloid settings or missing paraboloid SPIR-V shaders");
     Camera cam{F4(F(eye),0),F4(F(right),0),F4(F(vertical),0),F4(F(forward),0),
         F4(static_cast<float>(std::tan(camera.fovDeg*std::acos(-1.0)/360)),static_cast<float>(width)/height,
             static_cast<float>(farPlane/(farPlane-nearPlane)),static_cast<float>(-nearPlane*farPlane/(farPlane-nearPlane))),
         F4(static_cast<float>(width),static_cast<float>(height),static_cast<float>(radius),static_cast<float>(nearPlane))};
     if(!finite(V(F(cam.eye))) || !finite(V(F(cam.forward)))) return s.fail("Camera outside float range");
+    if(paraboloid) cam.projection=F4(static_cast<float>(nearPlane),static_cast<float>(farPlane),0,0);
     std::vector<Triangle> triangles; triangles.reserve(input.size());
     for(const auto& t:input) {
         const V a=vector(t.v0),b=vector(t.v1),c=vector(t.v2),reflectance=vector(t.albedo),normal=glm::cross(b-a,c-a);
@@ -267,6 +284,36 @@ bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const Photo
         const Triangle gpu{F4(F(a),0),F4(F(b),0),F4(F(c),0),F4(F(glm::normalize(normal)),0),F4(F(reflectance),0)};
         if(!finite(V(F(gpu.a))) || !finite(V(F(gpu.b))) || !finite(V(F(gpu.c)))) return s.fail("Triangle outside float range");
         triangles.push_back(gpu);
+    }
+    if(paraboloid) {
+        std::vector<Triangle> projected;
+        bool overflow=false;
+        const std::function<void(V,V,V,const Triangle&,int)> subdivide=[&](V a,V b,V c,const Triangle& original,int level) {
+            if(overflow) return;
+            if(level>0) {
+                const V ab=(a+b)*0.5,bc=(b+c)*0.5,ca=(c+a)*0.5;
+                subdivide(a,ab,ca,original,level-1); subdivide(ab,b,bc,original,level-1);
+                subdivide(ca,bc,c,original,level-1); subdivide(ab,bc,ca,original,level-1); return;
+            }
+            if(projected.size()>=1000000) { overflow=true; return; }
+            Triangle t=original; t.a=F4(F(a),0); t.b=F4(F(b),0); t.c=F4(F(c),0); projected.push_back(t);
+        };
+        for(std::size_t id=0;id<triangles.size();++id) {
+            auto original=triangles[id]; original.reflectance.w=static_cast<float>(id+1);
+            std::vector<V> polygon={V(F(original.a)),V(F(original.b)),V(F(original.c))},clipped;
+            // Clip against the forward hemisphere before nonlinear projection.
+            V previous=polygon.back(); double previousZ=glm::dot(previous-eye,forward);
+            for(const V current:polygon) {
+                const double currentZ=glm::dot(current-eye,forward);
+                if((currentZ>=0)!=(previousZ>=0)) clipped.push_back(previous+(current-previous)*(previousZ/(previousZ-currentZ)));
+                if(currentZ>=0) clipped.push_back(current);
+                previous=current; previousZ=currentZ;
+            }
+            for(std::size_t i=1;i+1<clipped.size();++i) subdivide(clipped[0],clipped[i],clipped[i+1],original,subdivision);
+            if(overflow) return s.fail("Paraboloid subdivision exceeds triangle budget");
+        }
+        if(projected.empty()) { Triangle dummy{}; dummy.a=dummy.b=dummy.c=F4(F(eye-forward),0); projected.push_back(dummy); }
+        triangles=std::move(projected);
     }
     std::vector<GpuPhoton> photons;
     for(const auto& p:map.getPhotons()) {
@@ -281,12 +328,13 @@ bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const Photo
     VkPhysicalDeviceProperties properties; vkGetPhysicalDeviceProperties(ctx.getPhysicalDevice(),&properties);
     if(triangles.size()*sizeof(Triangle)>properties.limits.maxStorageBufferRange || photons.size()*sizeof(GpuPhoton)>properties.limits.maxStorageBufferRange)
         return s.fail("Storage buffer exceeds device limits");
-    if(width!=s.width || height!=s.height || !s.geometryPipeline.getPipeline() || !s.splatPipeline.getPipeline()) {
+    if(width!=s.width || height!=s.height || paraboloid!=s.paraboloidTarget || !s.geometryPipeline.getPipeline() || !s.splatPipeline.getPipeline()) {
         s.geometryPipeline.destroy(device); s.splatPipeline.destroy(device);
         if(!s.geometry.create(ctx,width,height,true) || !s.accumulation.create(ctx,width,height,false)
-            || !s.geometryPipeline.create(ctx,s.geometry.pass,s.geometryConfig)
+            || !s.geometryPipeline.create(ctx,s.geometry.pass,paraboloid?s.paraboloidConfig:s.geometryConfig)
             || !s.splatPipeline.create(ctx,s.accumulation.pass,s.splatConfig)) return s.fail("Render target or pipeline creation failed");
         s.width=width; s.height=height;
+        s.paraboloidTarget=paraboloid;
     }
     const VkDeviceSize pixels=static_cast<VkDeviceSize>(width)*height;
     if(!s.cameraBuffer.create(ctx,sizeof(Camera),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
@@ -376,10 +424,17 @@ bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const Photo
         auto& receiver=gbuffer.receivers[i]; receiver.depth=depths[i];
         const int id=static_cast<int>(normals[i].w)-1;
         if(id<0) continue;
-        if(id>=static_cast<int>(triangles.size()) || !std::isfinite(depths[i])) return s.fail("Invalid GPU receiver");
-        const float z=cam.projection.w/(depths[i]-cam.projection.z);
+        if(id>=static_cast<int>(input.size()) || !std::isfinite(depths[i])) return s.fail("Invalid GPU receiver");
+        const float z=paraboloid?0:cam.projection.w/(depths[i]-cam.projection.z);
         const float u=2*(x+0.5f)/width-1,v=2*(y+0.5f)/height-1;
-        const F position=F(cam.eye)+F(cam.forward)*z+F(cam.right)*(u*z*cam.projection.x*cam.projection.y)-F(cam.up)*(v*z*cam.projection.x);
+        F position;
+        if(paraboloid) {
+            const float r2=u*u+v*v;
+            if(r2>1) continue;
+            const float distance=cam.projection.x+depths[i]*(cam.projection.y-cam.projection.x);
+            const F direction=(F(cam.right)*(2*u)-F(cam.up)*(2*v)+F(cam.forward)*(1-r2))/(1+r2);
+            position=F(cam.eye)+direction*distance;
+        } else position=F(cam.eye)+F(cam.forward)*z+F(cam.right)*(u*z*cam.projection.x*cam.projection.y)-F(cam.up)*(v*z*cam.projection.x);
         if(!finite(V(position))) return s.fail("Depth reconstruction outside finite range");
         const F normal=glm::normalize(F(normals[i]));
         if(glm::dot(normal,F(cam.eye)-position)<=0) continue;

@@ -488,8 +488,8 @@ int runDepthPhotons(int argc,char** argv)
 {
 #ifdef PHOTON_SPLAT_VULKAN
     namespace RT=Phantom::RayTracer;
-    if(argc!=12) {
-        std::cerr<<"Usage: --photon-depth out imageSize lightSamples firstResolution minResolution maxDepth cap seed radius dropEvery\n";
+    if(argc!=12 && argc!=14) {
+        std::cerr<<"Usage: --photon-depth out imageSize lightSamples firstResolution minResolution maxDepth cap seed radius dropEvery [hemicube|paraboloid subdivision]\n";
         return 1;
     }
     const auto integer=[](const char* text,int maximum) {
@@ -527,6 +527,12 @@ int runDepthPhotons(int argc,char** argv)
     RT::DepthPhotonSettings settings; settings.lightSamples=lights; settings.firstResolution=resolution;
     settings.minResolution=minimum; settings.maxDepth=depth; settings.selection.maxParticles=cap;
     settings.randomSeed=static_cast<std::uint32_t>(seed); settings.resolutionDropEvery=drop;
+    if(argc==14) {
+        const std::string projection=argv[12];
+        if(projection!="hemicube" && projection!="paraboloid") return 1;
+        settings.projection=projection=="paraboloid"?RT::DepthPhotonProjection::Paraboloid:RT::DepthPhotonProjection::Hemicube;
+        settings.paraboloidSubdivision=integer(argv[13],6); if(settings.paraboloidSubdivision<0) return 1;
+    }
     RT::DepthPhotonTransport transport; RT::PhotonMap map;
     const auto start=std::chrono::steady_clock::now();
     if(!transport.build(gpu,triangles,settings,map)) { std::cerr<<transport.getLastError()<<'\n'; return 1; }
@@ -558,9 +564,10 @@ int runDepthPhotons(int argc,char** argv)
         orders<<'\n';
     }
     std::ofstream metrics(out/"depth_metrics.csv"); metrics.precision(12);
-    metrics<<"device,size,light_samples,first_resolution,min_resolution,max_depth,cap,seed,radius,drop_every,stored_photons,transport_seconds,total_seconds,transport_rays\n";
+    metrics<<"device,size,light_samples,first_resolution,min_resolution,max_depth,cap,seed,radius,drop_every,stored_photons,transport_seconds,total_seconds,transport_rays,projection,subdivision\n";
     metrics<<'"'<<context.getDeviceName()<<'"'<<','<<size<<','<<lights<<','<<resolution<<','<<minimum<<','<<depth
-        <<','<<cap<<','<<seed<<','<<radius<<','<<drop<<','<<map.getPhotons().size()<<','<<stats.seconds<<','<<total<<",0\n";
+        <<','<<cap<<','<<seed<<','<<radius<<','<<drop<<','<<map.getPhotons().size()<<','<<stats.seconds<<','<<total<<",0,"
+        <<(settings.projection==RT::DepthPhotonProjection::Paraboloid?"paraboloid":"hemicube")<<','<<settings.paraboloidSubdivision<<'\n';
     std::cout<<"Depth transport="<<stats.seconds<<"s total="<<total<<"s (transport rays=0)\n";
     return metrics.good()&&orders.good()?0:1;
 #else
