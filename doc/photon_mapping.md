@@ -82,7 +82,7 @@ GoogleTestでフラックスの正規化、余弦の二重適用防止、面・�
 
 推定は固定半径なのでバイアスがある。半径を小さくするとノイズが増え、大きくすると細部がぼける。法線の一致と接平面からの距離で近隣面の混入を抑えるが、輪郭でのカーネル切断や、近接する同一平面の別領域の光漏れは完全には解決していない。
 
-KDTreeとBVHはfloat座標、交差判定と保存パワーはdoubleである。非常に大きい座標で微小な形状を扱う場合は、シーンを適切な尺度へ変換する必要がある。CPU単一スレッド、固定半径版であり、progressive photon mapping、final gathering、適応半径、GPU化は未実装。
+KDTreeとBVHはfloat座標、交差判定と保存パワーはdoubleである。非常に大きい座標で微小な形状を扱う場合は、シーンを適切な尺度へ変換する必要がある。輸送はCPU単一スレッド、推定は固定半径版。progressive photon mapping、final gathering、適応半径、フォトン輸送のGPU化は未実装。
 
 初回の96×96、20万放出、32 sppの合成コーネルボックスで描画を確認した。保存数は359,490（直接161,653、間接197,837、caustic 0）。1本の光路が複数の拡散衝突を保存するため、保存数は放出数を超え得る。速度・誤差対品質の本格比較は今後の評価とする。
 
@@ -91,3 +91,7 @@ KDTreeとBVHはfloat座標、交差判定と保存パワーはdoubleである。
 ## GPUでの深度G-buffer集約
 
 [PhotonSplatGpu](../PhotonSplatGpu/README.md) は、同じフォトンを深度G-bufferへ加算スプラットし、同じ受光点でKDTree推定と比較するオプションのVulkanライブラリ。フォトン追跡は引き続きCPUで行う。
+
+## 到着点を間引くPBVRフォトン輸送
+
+`settings.transport = PhotonTransport::Pbvr` で、反射次数ごとの到着点保存・間引き・パワー補正・再放出を選択できる。詳細と比較CLIは [PBVRフォトン輸送](pbvr_photon_transport.md) を参照。

@@ -1,4 +1,5 @@
 #include "PhotonMapper.h"
+#include "PbvrResampler.h"
 #include "../../CGLib/Space/Space/KDTree.h"
 #include "../../CGLib/Space/Space/BVH.h"
 #include <algorithm>
@@ -21,7 +22,19 @@ struct Random {
     explicit Random(std::uint32_t seed) : engine(seed) {}
     double next() { return (static_cast<double>(engine())+0.5)/4294967296.0; }
 };
-V cosine(V normal, Random& rng)
+// Small per-particle stream: surviving paths are independent of the selection
+// and ordering of other particles. This permits paired thinning comparisons.
+struct ParticleRandom {
+    std::uint64_t state;
+    double next() {
+        std::uint64_t z=(state+=0x9e3779b97f4a7c15ull);
+        z=(z^(z>>30))*0xbf58476d1ce4e5b9ull;
+        z=(z^(z>>27))*0x94d049bb133111ebull;
+        z^=z>>31;
+        return (static_cast<double>(z>>12)+0.5)/4503599627370496.0;
+    }
+};
+template<class R> V cosine(V normal, R& rng)
 {
     const double r=std::sqrt(rng.next()), phi=2*pi*rng.next();
     const V tangent=glm::normalize(glm::cross(std::abs(normal.y)<0.9 ? V(0,1,0) : V(1,0,0),normal));
@@ -32,27 +45,32 @@ bool accepts(PhotonContribution wanted, PhotonContribution actual)
 { return wanted==PhotonContribution::All || wanted==actual
     || (wanted==PhotonContribution::Indirect && actual==PhotonContribution::Caustic); }
 }
-struct PhotonMap::Impl { std::vector<Photon> photons; Space::KDTree tree; };
+struct PhotonMap::Impl { std::vector<Photon> photons; Space::KDTree tree; bool indexed=false; };
 PhotonMap::PhotonMap() : impl_(std::make_unique<Impl>()) {}
 PhotonMap::~PhotonMap() = default;
-void PhotonMap::clear() { impl_->photons.clear(); impl_->tree.clear(); }
+void PhotonMap::clear() { impl_->photons.clear(); impl_->tree.clear(); impl_->indexed=false; }
 const std::vector<Photon>& PhotonMap::getPhotons() const { return impl_->photons; }
-bool PhotonMap::build(const std::vector<Photon>& photons)
+bool PhotonMap::hasSpatialIndex() const { return impl_->indexed; }
+bool PhotonMap::build(const std::vector<Photon>& photons,bool buildIndex)
+{ return build(std::vector<Photon>(photons),buildIndex); }
+bool PhotonMap::build(std::vector<Photon>&& photons,bool buildIndex)
 {
     if(photons.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())) { clear(); return false; }
-    std::vector<Photon> validated=photons; // Also supports build(getPhotons()).
+    std::vector<Photon> validated=std::move(photons);
     clear();
-    Math::Vector3dfVector positions; positions.reserve(validated.size());
+    Math::Vector3dfVector positions; if(buildIndex) positions.reserve(validated.size());
     for(const auto& p:validated) {
         const Math::Vector3df position(p.position);
         if(!finite(p.position) || !finite(V(position)) || !nonnegative(p.power)
             || !finite(p.normal) || !finite(p.direction)
             || std::abs(glm::length(p.normal)-1)>1e-6 || std::abs(glm::length(p.direction)-1)>1e-6
             || (p.contribution!=PhotonContribution::Direct && p.contribution!=PhotonContribution::Indirect
-                && p.contribution!=PhotonContribution::Caustic)) return false;
-        positions.push_back(position);
+                && p.contribution!=PhotonContribution::Caustic) || p.bounce<0 || p.bounce>=64) return false;
+        if(buildIndex) positions.push_back(position);
     }
-    impl_->photons=std::move(validated); impl_->tree.build(positions); return true;
+    impl_->photons=std::move(validated);
+    if(buildIndex) impl_->tree.build(positions);
+    impl_->indexed=buildIndex; return true;
 }
 V PhotonMap::estimateRadiance(const V& position,const V& normal,const V& reflectance,
                              double radius,PhotonContribution contribution) const
@@ -67,12 +85,17 @@ V PhotonMap::estimateRadiance(const V& position,const V& normal,const V& reflect
     const double padding=8*std::numeric_limits<float>::epsilon()*std::max(1.0,maximum(glm::abs(position))+radius);
     const float queryRadius=std::nextafter(static_cast<float>(std::min(radius+padding,
         static_cast<double>(std::numeric_limits<float>::max()))),std::numeric_limits<float>::infinity());
-    for(int index:impl_->tree.findWithinRadius(query,queryRadius)) {
-        const auto& p=impl_->photons[index]; const V delta=p.position-position;
+    const auto accumulate=[&](const Photon& p) {
+        const V delta=p.position-position;
         if(!accepts(contribution,p.contribution) || glm::dot(delta,delta)>radius*radius
             || glm::dot(p.normal,normal)<0.9 || glm::dot(p.direction,normal)>=0
-            || std::abs(glm::dot(delta,normal))>radius*0.02) continue;
+            || std::abs(glm::dot(delta,normal))>radius*0.02) return;
         flux+=p.power;
+    };
+    if(impl_->indexed) {
+        for(int index:impl_->tree.findWithinRadius(query,queryRadius)) accumulate(impl_->photons[index]);
+    } else {
+        for(const auto& p:impl_->photons) accumulate(p);
     }
     // Photons carry incident flux: do not multiply by another incident cosine.
     return reflectance*flux/(pi*pi*radius*radius);
@@ -113,14 +136,14 @@ struct PhotonMapper::Impl {
         }
         return result;
     }
-    const Light& selectLight(Random& rng) const
+    template<class R> const Light& selectLight(R& rng) const
     {
         const double sample=rng.next();
         const auto it=std::lower_bound(lights.begin(),lights.end(),sample,
             [](const Light& l,double x) { return l.cumulative<x; });
         return it==lights.end()?lights.back():*it;
     }
-    V point(const Triangle& t,Random& rng) const
+    template<class R> V point(const Triangle& t,R& rng) const
     { const double a=std::sqrt(rng.next()),b=rng.next(); return t.a*(1-a)+t.b*(a*(1-b))+t.c*(a*b); }
     V direct(const Hit& h,Random& rng) const
     {
@@ -152,6 +175,98 @@ struct PhotonMapper::Impl {
         }
         return emitted;
     }
+    void store(std::vector<Photon>& photons,const Hit& h,V direction,V power,
+               bool diffuseSeen,bool specularSeen,int bounce) {
+        const auto contribution=diffuseSeen?PhotonContribution::Indirect:
+            (specularSeen?PhotonContribution::Caustic:PhotonContribution::Direct);
+        if(contribution==PhotonContribution::Direct && !settings.storeDirectPhotons) return;
+        photons.push_back({h.position,direction,triangles[h.index].normal,power,contribution,bounce});
+        if(contribution==PhotonContribution::Direct) ++stats.directPhotons;
+        else if(contribution==PhotonContribution::Caustic) ++stats.causticPhotons;
+        else ++stats.indirectPhotons;
+        auto& step=stats.bounces[bounce]; ++step.storedPhotons; step.storedFlux+=power;
+    }
+    bool tracePbvr(std::vector<Photon>& photons) {
+        struct Particle {
+            V origin,direction,power;
+            ParticleRandom random;
+            bool diffuseSeen=false,specularSeen=false;
+            int surface=-1; // Set on arrival; reused when re-emitting.
+        };
+        std::vector<Particle> active; active.reserve(settings.photonCount);
+        for(std::size_t i=0;i<settings.photonCount;++i) {
+            ParticleRandom rng{(static_cast<std::uint64_t>(settings.render.randomSeed)<<32)^i};
+            const auto& light=selectLight(rng); const auto& source=triangles[light.index];
+            const V origin=point(source,rng)+source.normal*(settings.rayEpsilon*4);
+            const V direction=cosine(source.normal,rng);
+            const V power=source.emission*(pi*source.area/(static_cast<double>(settings.photonCount)*light.probability));
+            if(!nonnegative(power)) return fail("Nonfinite emitted PBVR power");
+            active.push_back({origin,direction,power,rng});
+        }
+        Random selection(settings.pbvr.randomSeed);
+        std::vector<Particle> arrivals;
+        for(int bounce=0;bounce<settings.photonMaxDepth && !active.empty();++bounce) {
+            auto& step=stats.bounces[bounce]; step.tracedRays=active.size(); stats.tracedRays+=active.size();
+            arrivals.clear(); arrivals.reserve(active.size());
+            for(auto p:active) {
+                const auto h=hit(p.origin,p.direction); if(h.index<0) continue;
+                const auto& t=triangles[h.index]; if(glm::dot(t.normal,-p.direction)<=0) continue;
+                ++step.arrivals;
+                // Every diffuse arrival contributes before any selection for the next order.
+                if(!t.mirror) { store(photons,h,p.direction,p.power,p.diffuseSeen,p.specularSeen,bounce); p.diffuseSeen=true; }
+                else p.specularSeen=true;
+                if(bounce+1==settings.photonMaxDepth) continue;
+                p.power*=t.reflectance; // Material absorption is separate from thinning.
+                if(maximum(p.power)<=0) continue;
+                ++step.continuationCandidates;
+                if(settings.pbvr.selection==PbvrSelection::Uniform) {
+                    if(settings.pbvr.retention<1 && selection.next()>=settings.pbvr.retention) continue;
+                    p.power/=settings.pbvr.retention;
+                }
+                if(!nonnegative(p.power)) return fail("PBVR selection compensation overflow");
+                p.origin=h.position; p.surface=h.index; arrivals.push_back(p);
+            }
+            const std::size_t cap=settings.pbvr.maxParticles;
+            if(settings.pbvr.selection!=PbvrSelection::Uniform && !arrivals.empty()) {
+                std::vector<PbvrArrival> candidates; candidates.reserve(arrivals.size());
+                for(const auto& p:arrivals) candidates.push_back({p.origin,p.power,p.surface});
+                auto options=settings.pbvr;
+                if(options.spatialCellSize==0) options.spatialCellSize=settings.gatherRadius;
+                std::vector<PbvrSelectedSample> samples; PbvrResampleStats selectionStats;
+                const auto seed=settings.pbvr.randomSeed^static_cast<std::uint32_t>(bounce)*0x9e3779b9u;
+                if(!resamplePbvr(candidates,options,seed,samples,selectionStats,error)) return false;
+                std::vector<Particle> selected; selected.reserve(samples.size());
+                for(const auto& sample:samples) {
+                    auto p=arrivals[sample.source]; p.power*=sample.powerScale;
+                    if(!nonnegative(p.power)) return fail("PBVR importance compensation overflow");
+                    if(sample.resampled) p.random.state=sample.randomKey; // Independent directions for duplicate draws.
+                    selected.push_back(p);
+                }
+                arrivals.swap(selected); step.spatialStrata=selectionStats.strata;
+                step.sampledStrata=selectionStats.sampledStrata;
+            }
+            const double capWeight=settings.pbvr.selection==PbvrSelection::Uniform && cap && arrivals.size()>cap?
+                static_cast<double>(arrivals.size())/cap:1;
+            if(capWeight>1) {
+                // Uniform fixed-size sample, not the first K arrivals (which would bias geometry).
+                for(std::size_t i=0;i<cap;++i) {
+                    std::uniform_int_distribution<std::size_t> choose(i,arrivals.size()-1);
+                    std::swap(arrivals[i],arrivals[choose(selection.engine)]);
+                }
+                arrivals.resize(cap);
+            }
+            for(auto& p:arrivals) {
+                p.power*=capWeight;
+                if(!nonnegative(p.power)) return fail("PBVR particle cap compensation overflow");
+                const auto& t=triangles[p.surface];
+                p.origin+=t.normal*(settings.rayEpsilon*4);
+                p.direction=t.mirror?glm::reflect(p.direction,t.normal):cosine(t.normal,p.random);
+                step.reemittedFlux+=p.power;
+            }
+            step.retainedParticles=arrivals.size(); active.swap(arrivals);
+        }
+        return true;
+    }
 };
 PhotonMapper::PhotonMapper(const PhotonMappingSettings& settings) : impl_(std::make_unique<Impl>(settings)) {}
 PhotonMapper::~PhotonMapper() = default;
@@ -159,6 +274,16 @@ const PhotonMap& PhotonMapper::getPhotonMap() const { return impl_->map; }
 const PhotonMappingStats& PhotonMapper::getStats() const { return impl_->stats; }
 const std::string& PhotonMapper::getLastError() const { return impl_->error; }
 bool PhotonMapper::build(const std::vector<RtTriangle>& input)
+{
+    return buildImpl(input,nullptr);
+}
+bool PhotonMapper::buildWithPhotons(const std::vector<RtTriangle>& input,const std::vector<Photon>& photons)
+{
+    // Copy first so an alias of our current map remains valid after reset.
+    const auto copy=photons;
+    return buildImpl(input,&copy);
+}
+bool PhotonMapper::buildImpl(const std::vector<RtTriangle>& input,const std::vector<Photon>* external)
 {
     auto& s=*impl_; const auto start=std::chrono::steady_clock::now();
     s.ready=false; s.map.clear(); s.stats={}; s.error.clear(); s.bvh.reset();
@@ -170,6 +295,14 @@ bool PhotonMapper::build(const std::vector<RtTriangle>& input)
         || !std::isfinite(cfg.rayEpsilon) || cfg.rayEpsilon<=0 || cfg.rayEpsilon>1e10
         || cfg.directLightSamples<1 || cfg.render.maxDepth<1 || cfg.render.maxDepth>64)
         return s.fail("Invalid photon mapping settings");
+    if(cfg.transport!=PhotonTransport::Path && cfg.transport!=PhotonTransport::Pbvr)
+        return s.fail("Invalid photon transport mode");
+    if(cfg.transport==PhotonTransport::Pbvr && (!std::isfinite(cfg.pbvr.retention)
+        || cfg.pbvr.retention<=0 || cfg.pbvr.retention>1)) return s.fail("PBVR retention must be in (0, 1]");
+    if(cfg.transport==PhotonTransport::Pbvr && ((cfg.pbvr.selection!=PbvrSelection::Uniform
+        && cfg.pbvr.selection!=PbvrSelection::Power && cfg.pbvr.selection!=PbvrSelection::SpatialPower)
+        || !std::isfinite(cfg.pbvr.uniformMix) || cfg.pbvr.uniformMix<0 || cfg.pbvr.uniformMix>1
+        || !std::isfinite(cfg.pbvr.spatialCellSize) || cfg.pbvr.spatialCellSize<0)) return s.fail("Invalid PBVR selection settings");
     if(input.empty() || input.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())) return s.fail("Invalid triangle count");
     double total=0;
     for(const auto& t:input) {
@@ -197,6 +330,20 @@ bool PhotonMapper::build(const std::vector<RtTriangle>& input)
     std::vector<Space::BVHObject*> objects; for(auto& o:s.objects) objects.push_back(o.get());
     s.bvh=std::make_unique<Space::BVH>(objects);
     std::vector<Photon> photons; photons.reserve(cfg.photonCount);
+    s.stats.bounces.resize(cfg.photonMaxDepth);
+    const auto transportStart=std::chrono::steady_clock::now();
+    if(external) {
+        photons=*external;
+        for(const auto& p:photons) {
+            if(p.bounce<0 || p.bounce>=cfg.photonMaxDepth) return s.fail("Invalid external photon bounce");
+            auto& step=s.stats.bounces[p.bounce]; ++step.arrivals; ++step.storedPhotons; step.storedFlux+=p.power;
+            if(p.contribution==PhotonContribution::Direct) ++s.stats.directPhotons;
+            else if(p.contribution==PhotonContribution::Caustic) ++s.stats.causticPhotons;
+            else ++s.stats.indirectPhotons;
+        }
+    } else if(cfg.transport==PhotonTransport::Pbvr) {
+        if(!s.tracePbvr(photons)) return false;
+    } else {
     Random rng(cfg.render.randomSeed);
     for(std::size_t i=0;i<cfg.photonCount;++i) {
         const auto& light=s.selectLight(rng); const auto& source=s.triangles[light.index];
@@ -204,26 +351,29 @@ bool PhotonMapper::build(const std::vector<RtTriangle>& input)
         V power=source.emission*(pi*source.area/(static_cast<double>(cfg.photonCount)*light.probability));
         bool diffuseSeen=false,specularSeen=false;
         for(int bounce=0;bounce<cfg.photonMaxDepth;++bounce) {
+            auto& step=s.stats.bounces[bounce]; ++step.tracedRays; ++s.stats.tracedRays;
             const auto h=s.hit(origin,direction); if(h.index<0) break;
             const auto& t=s.triangles[h.index]; if(glm::dot(t.normal,-direction)<=0) break;
+            ++step.arrivals;
             if(!t.mirror) {
-                const auto contribution=diffuseSeen?PhotonContribution::Indirect:
-                    (specularSeen?PhotonContribution::Caustic:PhotonContribution::Direct);
-                photons.push_back({h.position,direction,t.normal,power,contribution});
-                if(contribution==PhotonContribution::Direct) ++s.stats.directPhotons;
-                else if(contribution==PhotonContribution::Caustic) ++s.stats.causticPhotons;
-                else ++s.stats.indirectPhotons;
+                s.store(photons,h,direction,power,diffuseSeen,specularSeen,bounce);
                 diffuseSeen=true;
             } else specularSeen=true;
             const double survival=maximum(t.reflectance);
+            if(bounce+1<cfg.photonMaxDepth && survival>0) ++step.continuationCandidates;
             if(survival<=0 || rng.next()>=survival) break;
             power*=t.reflectance/survival; // Russian roulette compensation.
             origin=h.position+t.normal*(cfg.rayEpsilon*4);
             direction=t.mirror?glm::reflect(direction,t.normal):cosine(t.normal,rng);
+            if(bounce+1<cfg.photonMaxDepth) { ++step.retainedParticles; step.reemittedFlux+=power; }
         }
     }
-    if(!s.map.build(photons)) return s.fail("Invalid photon map");
-    s.stats.emittedPhotons=cfg.photonCount;
+    }
+    s.stats.transportSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-transportStart).count();
+    const auto mapStart=std::chrono::steady_clock::now();
+    if(!s.map.build(std::move(photons),cfg.buildPhotonIndex)) return s.fail("Invalid photon map");
+    s.stats.mapBuildSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-mapStart).count();
+    s.stats.emittedPhotons=external?0:cfg.photonCount;
     s.stats.buildSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
     s.ready=true; return true;
 }

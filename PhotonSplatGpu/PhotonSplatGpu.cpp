@@ -33,14 +33,19 @@ struct Buffer {
     VkBuffer buffer=VK_NULL_HANDLE;
     VkDeviceMemory memory=VK_NULL_HANDLE;
     void* mapped=nullptr;
+    VkDeviceSize capacity=0;
+    VkBufferUsageFlags bufferUsage=0;
+    bool cachedReadback=false;
     ~Buffer() { destroy(); }
     void destroy() {
         if(mapped) vkUnmapMemory(device,memory);
         if(buffer) vkDestroyBuffer(device,buffer,nullptr);
         if(memory) vkFreeMemory(device,memory,nullptr);
         mapped=nullptr; buffer=VK_NULL_HANDLE; memory=VK_NULL_HANDLE;
+        capacity=0; bufferUsage=0;
     }
     bool create(const VKG::VulkanContext& ctx,VkDeviceSize size,VkBufferUsageFlags usage,bool readback=false) {
+        if(buffer && mapped && device==ctx.getDevice() && capacity>=size && bufferUsage==usage && cachedReadback==readback) return true;
         destroy(); device=ctx.getDevice();
         VkBufferCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; ci.size=size;
         ci.usage=usage; ci.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
@@ -55,7 +60,7 @@ struct Buffer {
         if(vkAllocateMemory(device,&ai,nullptr,&memory)!=VK_SUCCESS
             || vkBindBufferMemory(device,buffer,memory,0)!=VK_SUCCESS
             || vkMapMemory(device,memory,0,size,0,&mapped)!=VK_SUCCESS) return false;
-        return true;
+        capacity=size; bufferUsage=usage; cachedReadback=readback; return true;
     }
 };
 struct Target {
@@ -224,6 +229,19 @@ bool PhotonSplatGpu::render(const std::vector<RtTriangle>& input,const PhotonMap
     const RtCameraSpec& camera,int width,int height,double radius,Graphics::Imagef& indirect,
     PhotonGBuffer& receivers,PhotonContribution contribution,double nearPlane,double farPlane)
 {
+    return renderImpl(input,map,camera,width,height,radius,indirect,receivers,contribution,nearPlane,farPlane,false);
+}
+bool PhotonSplatGpu::rasterize(const std::vector<RtTriangle>& triangles,const RtCameraSpec& camera,
+    int width,int height,PhotonGBuffer& receivers,double nearPlane,double farPlane)
+{
+    PhotonMap empty; Graphics::Imagef unused;
+    return renderImpl(triangles,empty,camera,width,height,1,unused,receivers,
+        PhotonContribution::All,nearPlane,farPlane,true);
+}
+bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const PhotonMap& map,
+    const RtCameraSpec& camera,int width,int height,double radius,Graphics::Imagef& indirect,
+    PhotonGBuffer& receivers,PhotonContribution contribution,double nearPlane,double farPlane,bool geometryOnly)
+{
     auto& s=*impl_; s.stats={}; s.error.clear(); const auto uploadStart=std::chrono::steady_clock::now();
     const V eye=vector(camera.lookFrom),target=vector(camera.lookAt),up=vector(camera.up);
     if(!s.ready || width<1 || height<1 || width>4096 || height>4096 || input.empty() || input.size()>1000000
@@ -309,7 +327,7 @@ bool PhotonSplatGpu::render(const std::vector<RtTriangle>& input,const PhotonMap
     };
     draw(s.geometry,s.geometryPipeline,true);
     if(s.queries) vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,s.queries,1);
-    draw(s.accumulation,s.splatPipeline,false);
+    if(!geometryOnly) draw(s.accumulation,s.splatPipeline,false);
     if(s.queries) vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,s.queries,2);
     VkImageMemoryBarrier barriers[2]{};
     for(int i=0;i<2;++i) {
@@ -325,6 +343,7 @@ bool PhotonSplatGpu::render(const std::vector<RtTriangle>& input,const PhotonMap
         VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,2,barriers);
     const VkImage copies[]={s.accumulation.color,s.geometry.color,s.geometry.depth};
     for(int i=0;i<3;++i) {
+        if(geometryOnly && i==0) continue;
         VkBufferImageCopy copy{}; copy.bufferOffset=pixels*16*i;
         copy.imageSubresource={static_cast<VkImageAspectFlags>(i==2?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT),0,0,1};
         copy.imageExtent={static_cast<uint32_t>(width),static_cast<uint32_t>(height),1};
@@ -352,8 +371,8 @@ bool PhotonSplatGpu::render(const std::vector<RtTriangle>& input,const PhotonMap
     gbuffer.receivers.resize(static_cast<std::size_t>(pixels));
     for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
         const std::size_t i=static_cast<std::size_t>(y)*width+x;
-        if(!finite(V(F(colors[i]))) || std::min({colors[i].x,colors[i].y,colors[i].z})<0) return s.fail("Invalid GPU radiance");
-        image.setColor(x,y,Graphics::ColorRGBAf(colors[i].x,colors[i].y,colors[i].z,1));
+        if(!geometryOnly && (!finite(V(F(colors[i]))) || std::min({colors[i].x,colors[i].y,colors[i].z})<0)) return s.fail("Invalid GPU radiance");
+        image.setColor(x,y,geometryOnly?Graphics::ColorRGBAf(0,0,0,1):Graphics::ColorRGBAf(colors[i].x,colors[i].y,colors[i].z,1));
         auto& receiver=gbuffer.receivers[i]; receiver.depth=depths[i];
         const int id=static_cast<int>(normals[i].w)-1;
         if(id<0) continue;
