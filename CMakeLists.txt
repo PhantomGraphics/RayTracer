@@ -1,4 +1,4 @@
-# Cross-platform CMake build for the RayTracer core library (PathTracer),
+# Cross-platform CMake build for the RayTracer core library (PathTracer / PhotonMapper),
 # its GoogleTest suite (RayTracerTest), and RayTracerView (Vulkan app).
 #
 # This is a standalone CMake build, separate from the MSBuild/.vcxproj-based
@@ -72,10 +72,20 @@ phantom_add_space_core()
 
 add_library(RayTracerCore STATIC
     ${RAYTRACER_ROOT}/RayTracer/PathTracer.cpp
+    ${RAYTRACER_ROOT}/RayTracer/PhotonMapper.cpp
 )
 target_include_directories(RayTracerCore PRIVATE ${REPO_ROOT})
 target_link_libraries(RayTracerCore PUBLIC MathCore GraphicsCore SpaceCore)
 target_compile_options(RayTracerCore PRIVATE ${PHANTOM_WARN_FLAGS})
+
+# CPU surface-particle transport experiment; no Vulkan dependency.
+add_executable(CornellSurfaceTransport
+    ${RAYTRACER_ROOT}/CornellSurfaceTransport/main.cpp
+)
+target_link_libraries(CornellSurfaceTransport PRIVATE RayTracerCore)
+target_compile_options(CornellSurfaceTransport PRIVATE ${PHANTOM_WARN_FLAGS})
+enable_testing()
+add_test(NAME CornellSurfaceTransport.Checks COMMAND CornellSurfaceTransport --check)
 
 # --- RayTracerTest (GoogleTest) ---
 
@@ -86,6 +96,7 @@ if(PHANTOM_GTEST_FOUND)
 
     add_executable(RayTracerTest
         ${RAYTRACER_ROOT}/RayTracerTest/PathTracerTest.cpp
+        ${RAYTRACER_ROOT}/RayTracerTest/PhotonMapperTest.cpp
     )
     target_include_directories(RayTracerTest PRIVATE
         ${REPO_ROOT}
