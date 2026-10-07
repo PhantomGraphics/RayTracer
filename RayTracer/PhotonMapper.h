@@ -52,6 +52,17 @@ struct PhotonMappingStats {
     double buildSeconds = 0.0;
 };
 
+struct PhotonReceiver {
+    Math::Vector3dd position{0.0};
+    Math::Vector3dd normal{0.0, 1.0, 0.0};
+    int triangle = -1;
+    float depth = 1.0f; // Vulkan device depth, retained for diagnostics.
+};
+struct PhotonGBuffer {
+    int width = 0, height = 0;
+    std::vector<PhotonReceiver> receivers; // Pixel centers, top row first.
+};
+
 // Two-phase CPU photon mapper. Supports one-sided emissive triangles,
 // Lambertian surfaces (metallic == 0), and ideal mirrors (metallic == 1,
 // roughness == 0). Textures, rough metals, transmission and volumes are unsupported.
@@ -65,6 +76,10 @@ public:
     bool build(const std::vector<RtTriangle>& triangles);
     bool renderLinear(const RtCameraSpec& camera, Graphics::Imagef& output) const;
     bool render(const RtCameraSpec& camera, Graphics::Imageuc& output) const;
+    // Diffuse G-buffer shading. Optional linear indirect image replaces KDTree
+    // gathering; emission and direct-light random streams remain identical.
+    bool shadeGBuffer(const PhotonGBuffer& gbuffer, Graphics::Imagef& output,
+        const Graphics::Imagef* indirect = nullptr) const;
     const PhotonMap& getPhotonMap() const;
     const PhotonMappingStats& getStats() const;
     const std::string& getLastError() const;

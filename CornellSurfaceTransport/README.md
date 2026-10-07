@@ -71,3 +71,5 @@ CornellSurfaceTransport [out size grid samples orders referenceSpp seed reduce d
 ```
 
 詳細は [PhotonMapperのAPIと実行手順](../doc/photon_mapping.md) を参照。従来の表面粒子方式とは、推定方法・反射深度・サンプル条件が異なるため、単純な実行時間比を同品質での性能比としない。
+
+同じフォトン集合をGPUで加算集約する `--photon-splat` モードも追加した。[GPU集約の実行手順と計測の範囲](../PhotonSplatGpu/README.md) を参照。
