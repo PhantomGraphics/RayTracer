@@ -10,6 +10,8 @@
 #include "../RayTracer/PathTracer.h"
 #include "MenuPanel.h"
 #include "RayTraceResultPanel.h"
+#include "PbvrPreviewPanel.h"
+#include "GltfPbvrPreview.h"
 #include "CommandDispatcher.h"
 
 #include <filesystem>
@@ -21,6 +23,13 @@ public:
     RayTracerApp(int width, int height, const std::string& title);
 
     void loadGltf(const std::filesystem::path& path);
+    void loadDefaultGltf();
+    void drawGltfPbvrControls() { gltfPbvr_.drawControls(); }
+    void setGltfPbvr(bool enabled) { gltfPbvr_.setEnabled(enabled); }
+    void setGltfPbvrGain(float value) { gltfPbvr_.setIndirectGain(value); }
+    int gltfPbvrSamples() const { return gltfPbvr_.samples(); }
+    std::uint64_t gltfPbvrGeneration() const { return gltfPbvr_.generation(); }
+    bool waitGltfPbvrSamples(int count);
 
     // Phase 4B item 5 "same camera asset": the document's own first Perspective camera node,
     // captured by loadGltf()/reloadFile() (same "first instance" policy as Universe's
@@ -32,6 +41,12 @@ public:
     // Phase 4B item 5 "report the raster/offline diff": saves the most recently completed
     // path-traced render (see RayTraceResultPanel::saveResult()) to a PNG file.
     bool saveRayTraceResult(const std::string& path) const { return resultPanel_.saveResult(path); }
+    void startPbvrPreview() { pbvrPanel_.start(); }
+    bool runPbvrDemo(const std::filesystem::path& directory);
+    bool setPbvrYaw(float degrees) { return pbvrPanel_.setYaw(degrees); }
+    bool waitPbvrSamples(int count);
+    int pbvrSamples() const { return pbvrPanel_.samples(); }
+    std::uint64_t pbvrGeneration() const { return pbvrPanel_.generation(); }
 
     bool loadScenario(const std::string& jsonPath) override { return runner_.load(jsonPath); }
     void setExitOnScenarioComplete(bool v)         override { exitOnComplete_ = v; }
@@ -56,6 +71,12 @@ private:
     Phantom::Gltf::GltfSceneRenderer renderer_;
     MenuPanel   menuPanel_;
     RayTraceResultPanel  resultPanel_;
+    PbvrPreviewPanel pbvrPanel_;
+    GltfPbvrPreview gltfPbvr_;
+    bool pbvrDemoPending_=false;
+    int pbvrWaitSamples_=-1;
+    bool pbvrWaitGltf_=false;
+    std::chrono::steady_clock::time_point pbvrDeadline_;
 
     ViewShell         shell_;   // Command / Outliner windows
     CommandDispatcher dispatcher_;

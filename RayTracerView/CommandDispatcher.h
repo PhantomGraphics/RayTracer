@@ -47,6 +47,7 @@ public:
     };
     std::optional<RayTraceRequest> takePendingRayTrace();
     void signalRayTraceDone(bool ok, int width, int height);
+    void signalPbvrDone(const std::string& response) { pushDeferred(response); }
 
 private:
     std::string route(const std::string& cmd);

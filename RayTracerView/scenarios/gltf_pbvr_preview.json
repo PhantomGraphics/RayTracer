@@ -1,0 +1,23 @@
+{
+  "name": "gltf_pbvr_preview",
+  "steps": [
+    { "label": "Load real glTF sample", "command": "LoadFile:samples/pbvr_cornell.gltf", "expect": "OK:loaded" },
+    { "label": "Set overview distance", "command": "SetCamDist:4.2", "expect": "OK" },
+    { "label": "Disable native PBVR", "command": "SetGltfPbvr:0", "expect": "OK" },
+    { "label": "Capture raster baseline", "command": "SaveScreenshot:gltf_pbvr_demo/raster.png", "expect_prefix": "OK:saved" },
+    { "label": "Enable native PBVR", "command": "SetGltfPbvr:1", "expect": "OK" },
+    { "label": "Wait for 4 refined passes", "command": "WaitGltfPbvrSamples:4", "expect_prefix": "OK:glTF PBVR samples=" },
+    { "label": "Capture native PBVR viewport", "command": "SaveScreenshot:gltf_pbvr_demo/pbvr_4.png", "expect_prefix": "OK:saved" },
+    { "label": "Wait for 16 refined passes", "command": "WaitGltfPbvrSamples:16", "expect_prefix": "OK:glTF PBVR samples=" },
+    { "label": "Disable only indirect illumination", "command": "SetGltfPbvrGain:0", "expect": "OK" },
+    { "label": "Capture identical area-light direct shading", "command": "SaveScreenshot:gltf_pbvr_demo/direct_only.png", "expect_prefix": "OK:saved" },
+    { "label": "Restore indirect illumination", "command": "SetGltfPbvrGain:1", "expect": "OK" },
+    { "label": "Capture progressive refinement", "command": "SaveScreenshot:gltf_pbvr_demo/pbvr_16.png", "expect_prefix": "OK:saved" },
+    { "label": "Record generation", "command": "GetGltfPbvrGeneration", "expect_prefix": "Generation:", "store_as": "before", "strip_prefix": "Generation:" },
+    { "label": "Move real viewport camera", "command": "SetCamDist:5", "expect": "OK" },
+    { "label": "New camera resets accumulation", "command": "WaitGltfPbvrSamples:4", "expect_prefix": "OK:glTF PBVR samples=" },
+    { "label": "Capture moved viewport", "command": "SaveScreenshot:gltf_pbvr_demo/after_move.png", "expect_prefix": "OK:saved" },
+    { "label": "Generation advanced", "command": "GetGltfPbvrGeneration", "expect_prefix": "Generation:", "store_as": "after", "strip_prefix": "Generation:" }
+  ],
+  "post_assert": "after > before"
+}

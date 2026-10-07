@@ -9,6 +9,7 @@ int main(int argc, char* argv[])
 
     std::string scenarioPath;
     bool        noExitOnComplete = false;
+    bool        modelSpecified = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string_view a = argv[i];
@@ -26,9 +27,12 @@ int main(int argc, char* argv[])
             // combined --flag=value form: value is part of this same argv[i],
             // nothing to skip, just don't fall through to loadGltf below.
         } else if (a[0] != '-') {
+            modelSpecified = true;
             app.loadGltf(std::filesystem::path(argv[i]));
         }
     }
+
+    if(!modelSpecified && scenarioPath.empty()) app.loadDefaultGltf();
 
     if (!scenarioPath.empty()) {
         if (!app.loadScenario(scenarioPath)) {

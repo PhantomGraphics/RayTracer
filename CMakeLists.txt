@@ -162,6 +162,8 @@ add_executable(RayTracerView
     ${RAYTRACER_ROOT}/RayTracerView/RayTracerApp.cpp
     ${RAYTRACER_ROOT}/RayTracerView/MenuPanel.cpp
     ${RAYTRACER_ROOT}/RayTracerView/RayTraceResultPanel.cpp
+    ${RAYTRACER_ROOT}/RayTracerView/PbvrPreviewPanel.cpp
+    ${RAYTRACER_ROOT}/RayTracerView/GltfPbvrPreview.cpp
     ${RAYTRACER_ROOT}/RayTracerView/GltfSceneBuilder.cpp
     ${RAYTRACER_ROOT}/RayTracerView/CommandDispatcher.cpp
 )
@@ -172,6 +174,7 @@ target_include_directories(RayTracerView PRIVATE
 )
 target_link_libraries(RayTracerView PRIVATE
     RayTracerCore
+    RayTracerPhotonGpu
     GltfRendererCore
     VkAppBaseCore
     ${PHANTOM_VULKAN_LIBRARY}
@@ -179,14 +182,33 @@ target_link_libraries(RayTracerView PRIVATE
 )
 target_compile_options(RayTracerView PRIVATE ${PHANTOM_WARN_FLAGS})
 
-# RayTracerView has no shaders/ dir of its own -- RayTracerView.vcxproj's
-# PostBuildEvent xcopies CGLib/GltfViewer/shaders/*.spv (it reuses
-# GltfSceneRenderer's pipeline via GltfSceneBuilder.cpp, not a bespoke shader set).
+# Shared vertex/skybox shaders and viewer-specific PBVR fragment shader.
 add_custom_command(TARGET RayTracerView POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CGLIB_ROOT}/GltfViewer/shaders
         $<TARGET_FILE_DIR:RayTracerView>/shaders
 )
+add_custom_command(TARGET RayTracerView POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${RAYTRACER_ROOT}/PhotonSplatGpu/shaders
+        $<TARGET_FILE_DIR:RayTracerView>/photon_splat_shaders)
+find_program(RAYTRACER_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+if(RAYTRACER_GLSLC)
+set(RAYTRACER_PBVR_SPV ${CMAKE_CURRENT_BINARY_DIR}/raytracer_shaders/gltf_pbvr.frag.spv)
+add_custom_command(OUTPUT ${RAYTRACER_PBVR_SPV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/raytracer_shaders
+    COMMAND ${RAYTRACER_GLSLC} ${RAYTRACER_ROOT}/RayTracerView/shaders/gltf_pbvr.frag -o ${RAYTRACER_PBVR_SPV}
+    DEPENDS ${RAYTRACER_ROOT}/RayTracerView/shaders/gltf_pbvr.frag VERBATIM)
+add_custom_target(RayTracerViewShaders DEPENDS ${RAYTRACER_PBVR_SPV})
+add_dependencies(RayTracerView RayTracerViewShaders)
+else()
+    # Ship SPIR-V so end users do not need the shader compiler.
+    set(RAYTRACER_PBVR_SPV ${RAYTRACER_ROOT}/RayTracerView/shaders/gltf_pbvr.frag.spv)
+endif()
+add_custom_command(TARGET RayTracerView POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:RayTracerView>/raytracer_shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RAYTRACER_PBVR_SPV} $<TARGET_FILE_DIR:RayTracerView>/raytracer_shaders/gltf_pbvr.frag.spv
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${RAYTRACER_ROOT}/RayTracerView/samples $<TARGET_FILE_DIR:RayTracerView>/samples)
 
 else()
     message(WARNING "RayTracer: Vulkan and/or GLFW loader not found -- RayTracerView is skipped.")

@@ -1,0 +1,15 @@
+{
+  "name": "pbvr_progressive_preview",
+  "steps": [
+    { "label": "Run live progressive Cornell demo with independent reference", "command": "RunPbvrDemo:pbvr_preview_demo", "expect": "OK:PBVR samples=32 reference=32" },
+    { "label": "32 refined passes displayed", "command": "GetPbvrSamples", "expect": "Samples:32" },
+    { "label": "Save displayed accumulation generation", "command": "GetPbvrGeneration", "expect_prefix": "Generation:", "store_as": "before", "strip_prefix": "Generation:" },
+    { "label": "Capture progressive preview window", "command": "SaveScreenshot:pbvr_preview_demo/view_32.png", "expect_prefix": "OK:saved" },
+    { "label": "Camera move invalidates accumulation", "command": "SetPbvrYaw:12", "expect": "OK" },
+    { "label": "Old samples are not reused", "command": "GetPbvrSamples", "expect": "Samples:0" },
+    { "label": "Resume refinement at the new camera", "command": "WaitPbvrSamples:4", "expect_prefix": "OK:PBVR samples=" },
+    { "label": "Capture camera reset and refinement", "command": "SaveScreenshot:pbvr_preview_demo/view_after_move.png", "expect_prefix": "OK:saved" },
+    { "label": "Generation advanced", "command": "GetPbvrGeneration", "expect_prefix": "Generation:", "store_as": "after", "strip_prefix": "Generation:" }
+  ],
+  "post_assert": "after > before"
+}

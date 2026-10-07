@@ -158,6 +158,19 @@ bool RayTraceResultPanel::saveResult(const std::string& path) const
     Phantom::Graphics::ImageFileWriter writer;
     return writer.write(path, lastResult_);
 }
+void RayTraceResultPanel::present(const Phantom::Graphics::Imageuc& image)
+{
+    if(!ctx_ || rendering_ || image.getWidth()<1 || image.getHeight()<1) return;
+    vkDeviceWaitIdle(ctx_->getDevice());
+    uploadTexture(image); lastResult_=image;
+}
+void RayTraceResultPanel::drawImage()
+{
+    if(texDescSet_==VK_NULL_HANDLE) { ImGui::TextUnformatted("Waiting for first image..."); return; }
+    const ImVec2 available=ImGui::GetContentRegionAvail();
+    const float scale=std::min(available.x/texW_,available.y/texH_);
+    if(scale>0) ImGui::Image((ImTextureID)(intptr_t)texDescSet_,ImVec2(texW_*scale,texH_*scale));
+}
 
 void RayTraceResultPanel::destroyTexture()
 {

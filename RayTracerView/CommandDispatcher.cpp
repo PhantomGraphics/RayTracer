@@ -99,6 +99,17 @@ std::vector<CommandInfo> CommandDispatcher::commandCatalog() const {
         {"SetUseAssetCamera", "0|1", ""},
         {"SaveRayTraceResult", "path", "Save the last ray-trace result as PNG"},
         {"CompareImages", "pathA,pathB", "Mean/max difference of two PNGs"},
+        {"StartPbvrPreview", "", "Start the built-in Cornell progressive preview"},
+        {"RunPbvrDemo", "directory", "Save preview and 1/4/16/32-pass images plus an independent reference"},
+        {"GetPbvrSamples", "", "Current refinement passes"},
+        {"GetPbvrGeneration", "", "Accumulation reset generation"},
+        {"SetPbvrYaw", "degrees", "Orbit the Cornell preview and reset accumulation"},
+        {"WaitPbvrSamples", "count", "Deferred wait for refined passes, at most 32"},
+        {"SetGltfPbvr", "0|1", "Toggle PBVR lighting in the native glTF viewport"},
+        {"SetGltfPbvrGain", "float", "Indirect gain 0..2; direct lighting is unchanged"},
+        {"GetGltfPbvrSamples", "", "Native glTF refinement passes"},
+        {"GetGltfPbvrGeneration", "", "Native glTF accumulation generation"},
+        {"WaitGltfPbvrSamples", "count", "Wait for native glTF PBVR refinement"},
     };
 }
 
@@ -186,6 +197,44 @@ void CommandDispatcher::signalRayTraceDone(bool ok, int width, int height) {
 
 std::string CommandDispatcher::route(const std::string& cmd) {
     if (cmd == "CheckCommandCatalog") return cmdCheckCommandCatalog();
+    if(cmd.rfind("SetGltfPbvrGain:",0)==0) {
+        float value=0;
+        if(!app_ || !tryFloat(cmd.substr(16),value) || value<0 || value>2) return "Error:expected gain 0..2";
+        app_->setGltfPbvrGain(value); return "OK";
+    }
+    if(cmd.rfind("SetGltfPbvr:",0)==0) {
+        int value=0;
+        if(!app_ || !tryInt(cmd.substr(12),value) || (value!=0 && value!=1)) return "Error:expected 0 or 1";
+        app_->setGltfPbvr(value!=0); return "OK";
+    }
+    if(cmd=="GetGltfPbvrSamples") return "Samples:"+std::to_string(app_?app_->gltfPbvrSamples():0);
+    if(cmd=="GetGltfPbvrGeneration") return "Generation:"+std::to_string(app_?app_->gltfPbvrGeneration():0);
+    if(cmd.rfind("WaitGltfPbvrSamples:",0)==0) {
+        int count=0;
+        if(!app_ || !tryInt(cmd.substr(20),count) || !app_->waitGltfPbvrSamples(count)) return "Error:glTF PBVR cannot wait";
+        return {};
+    }
+    if(cmd=="StartPbvrPreview") {
+        if(!app_) return "Error:no app";
+        app_->startPbvrPreview(); return "OK";
+    }
+    if(cmd.rfind("RunPbvrDemo:",0)==0) {
+        if(!app_) return "Error:no app";
+        return app_->runPbvrDemo(cmd.substr(12))?std::string():"Error:PBVR demo cannot start";
+    }
+    if(cmd=="GetPbvrSamples") return "Samples:"+std::to_string(app_?app_->pbvrSamples():0);
+    if(cmd=="GetPbvrGeneration") return "Generation:"+std::to_string(app_?app_->pbvrGeneration():0);
+    if(cmd.rfind("SetPbvrYaw:",0)==0) {
+        if(!app_) return "Error:no app";
+        float degrees=0;
+        return tryFloat(cmd.substr(11),degrees)&&app_->setPbvrYaw(degrees)?"OK":"Error:invalid PBVR yaw or demo active";
+    }
+    if(cmd.rfind("WaitPbvrSamples:",0)==0) {
+        if(!app_) return "Error:no app";
+        int count=0;
+        if(!tryInt(cmd.substr(16),count)||!app_->waitPbvrSamples(count)) return "Error:invalid PBVR sample wait";
+        return {};
+    }
 
     if (cmd == "GetStatus") {
         return "OK";
