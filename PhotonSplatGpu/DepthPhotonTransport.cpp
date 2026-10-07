@@ -26,13 +26,16 @@ std::vector<Face> faces(V n) {
     return result;
 }
 struct Pixel { V direction; double weight; };
-std::vector<Pixel> quadrature(const std::vector<Face>& fs,V n,int edge) {
-    std::vector<Pixel> pixels; pixels.reserve(static_cast<std::size_t>(5)*edge*edge);
+std::vector<Pixel> quadrature(const std::vector<Face>& fs,V n,int edge,bool paraboloid) {
+    std::vector<Pixel> pixels; pixels.reserve(fs.size()*edge*edge);
     double total=0;
     for(const auto& f:fs) for(int y=0;y<edge;++y) for(int x=0;x<edge;++x) {
         const double u=2*(x+0.5)/edge-1,v=2*(y+0.5)/edge-1,r2=1+u*u+v*v;
-        const V direction=(f.forward+f.right*u-f.up*v)/std::sqrt(r2);
-        const double w=std::max(0.0,glm::dot(n,direction))*4/(edge*edge*std::pow(r2,1.5));
+        const double diskRadius=u*u+v*v;
+        const V direction=paraboloid?(f.right*(2*u)-f.up*(2*v)+f.forward*(1-diskRadius))/(1+diskRadius)
+            :(f.forward+f.right*u-f.up*v)/std::sqrt(r2);
+        const double w=paraboloid?(diskRadius<=1?std::max(0.0,glm::dot(n,direction))*16/(edge*edge*(1+diskRadius)*(1+diskRadius)):0)
+            :std::max(0.0,glm::dot(n,direction))*4/(edge*edge*std::pow(r2,1.5));
         pixels.push_back({direction,w}); total+=w;
     }
     // Normalize the discrete hemisphere, including rays which escape or clip.
@@ -47,6 +50,8 @@ bool DepthPhotonTransport::build(PhotonSplatGpu& gpu,const std::vector<RtTriangl
     const auto start=std::chrono::steady_clock::now();
     const auto fail=[&](const std::string& message) { error_=message; stats_={}; output.clear(); return false; };
     if(triangles.empty() || triangles.size()>1000000 || cfg.lightSamples<1 || cfg.lightSamples>100000
+        || (cfg.projection!=DepthPhotonProjection::Hemicube && cfg.projection!=DepthPhotonProjection::Paraboloid)
+        || cfg.paraboloidSubdivision<0 || cfg.paraboloidSubdivision>6
         || cfg.maxDepth<1 || cfg.maxDepth>64 || cfg.firstResolution<2 || cfg.firstResolution>1024
         || cfg.minResolution<2 || cfg.minResolution>cfg.firstResolution || cfg.resolutionDropEvery<0
         || !std::isfinite(cfg.nearPlane) || cfg.nearPlane<=0 || !std::isfinite(cfg.farPlane)
@@ -96,14 +101,19 @@ bool DepthPhotonTransport::build(PhotonSplatGpu& gpu,const std::vector<RtTriangl
         std::vector<PbvrArrival> candidates;
         for(const auto& source:sources) {
             step.launchedFlux+=source.power;
-            const auto fs=faces(source.normal); const auto pixels=quadrature(fs,source.normal,step.resolution);
+            const bool paraboloid=cfg.projection==DepthPhotonProjection::Paraboloid;
+            auto fs=faces(source.normal); if(paraboloid) fs.resize(1);
+            const auto pixels=quadrature(fs,source.normal,step.resolution,paraboloid);
             const V eye=source.position+source.normal*cfg.sourceOffset;
             for(std::size_t f=0;f<fs.size();++f) {
                 RtCameraSpec camera; camera.fovDeg=90;
                 const V target=eye+fs[f].forward;
                 for(int c=0;c<3;++c) { camera.lookFrom[c]=eye[c]; camera.lookAt[c]=target[c]; camera.up[c]=fs[f].up[c]; }
                 PhotonGBuffer buffer;
-                if(!gpu.rasterize(triangles,camera,step.resolution,step.resolution,buffer,cfg.nearPlane,cfg.farPlane))
+                const bool ok=paraboloid?gpu.rasterizeParaboloid(triangles,camera,step.resolution,buffer,
+                    cfg.nearPlane,cfg.farPlane,cfg.paraboloidSubdivision)
+                    :gpu.rasterize(triangles,camera,step.resolution,step.resolution,buffer,cfg.nearPlane,cfg.farPlane);
+                if(!ok)
                     return fail(gpu.getLastError());
                 ++step.depthMaps;
                 for(std::size_t i=0;i<buffer.receivers.size();++i) {

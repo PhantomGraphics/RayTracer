@@ -2,7 +2,10 @@
 #include "PhotonSplatGpu.h"
 
 namespace Phantom::RayTracer {
+enum class DepthPhotonProjection { Hemicube, Paraboloid };
 struct DepthPhotonSettings {
+    DepthPhotonProjection projection = DepthPhotonProjection::Hemicube;
+    int paraboloidSubdivision = 3; // Uniform triangle splitting, 4^N pieces.
     int lightSamples = 8;
     int maxDepth = 4;
     int firstResolution = 32;
@@ -29,7 +32,7 @@ struct DepthPhotonStats {
     double seconds = 0;
     std::vector<DepthPhotonBounceStats> bounces;
 };
-// Diffuse, untextured hemicube transport. GPU depth tests find ALL arrivals;
+// Diffuse, untextured hemisphere transport. GPU depth tests find ALL arrivals;
 // CPU readback performs flux accounting and source selection, never ray hits.
 // Rasterizer must be created and remain alive. Output/stats clear on failure.
 class DepthPhotonTransport {

@@ -1,5 +1,7 @@
 # 深度マップによるPBVRフォトン輸送
 
+半球を1回で描画する追加方式と実験結果は [放物面投影](paraboloid_photon_transport.md) を参照。
+
 ## 状態
 
 CPUでレイを追跡する従来PBVR輸送に代わる、Vulkanラスタライズによる輸送を追加した。実行入口は `--photon-depth`、ライブラリAPIは `DepthPhotonTransport`。従来の `--photon-pbvr` と `PhotonTransport::Pbvr` は比較用のCPU輸送として維持する。

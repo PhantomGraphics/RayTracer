@@ -28,6 +28,11 @@ public:
     bool rasterize(const std::vector<RtTriangle>& triangles, const RtCameraSpec& camera,
         int width, int height, PhotonGBuffer& receivers,
         double nearPlane = 0.01, double farPlane = 10000.0);
+    // Single disk covering the forward hemisphere. CPU hemisphere clipping
+    // and subdivision approximate curved coverage; fragment depth is radial.
+    bool rasterizeParaboloid(const std::vector<RtTriangle>& triangles,
+        const RtCameraSpec& camera, int resolution, PhotonGBuffer& receivers,
+        double nearPlane = 0.01, double farPlane = 10000.0, int subdivision = 3);
     // Photon positions are quantized to float on upload. Depth writes occur
     // only in the geometry pass; photons add all matching contributions.
     bool render(const std::vector<RtTriangle>& triangles, const PhotonMap& photons,
@@ -41,7 +46,8 @@ private:
     bool renderImpl(const std::vector<RtTriangle>& triangles, const PhotonMap& photons,
         const RtCameraSpec& camera, int width, int height, double radius,
         Graphics::Imagef& indirect, PhotonGBuffer& receivers,
-        PhotonContribution contribution, double nearPlane, double farPlane, bool geometryOnly);
+        PhotonContribution contribution, double nearPlane, double farPlane, bool geometryOnly,
+        bool paraboloid = false, int subdivision = 0);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
