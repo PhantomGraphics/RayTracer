@@ -155,3 +155,21 @@ TEST(PhotonMapperTest, ValidatesCameraSettingsAndLight)
     auto c=camera(); c.fovDeg=180; Phantom::Graphics::Imagef image;
     EXPECT_FALSE(mapper.renderLinear(c,image));
 }
+TEST(PhotonMapperTest, GBufferOverridePreservesDirectLightAndReprojectsDepthError)
+{
+    auto cfg=settings(); cfg.photonMaxDepth=1; PhotonMapper mapper(cfg);
+    ASSERT_TRUE(mapper.build(enclosure()));
+    PhotonGBuffer gbuffer{1,1,{PhotonReceiver{V(1,0,1),V(0,1,0),4,0.5f}}};
+    Phantom::Graphics::Imagef kd,zero(1,1),baseline,added(1,1),result;
+    zero.setColor(0,0,Phantom::Graphics::ColorRGBAf(0,0,0,1));
+    added.setColor(0,0,Phantom::Graphics::ColorRGBAf(0.1f,0.2f,0.3f,1));
+    ASSERT_TRUE(mapper.shadeGBuffer(gbuffer,kd));
+    ASSERT_TRUE(mapper.shadeGBuffer(gbuffer,baseline,&zero));
+    EXPECT_EQ(kd.getValues(),baseline.getValues()); EXPECT_GT(baseline.getColor(0,0).x,0);
+    ASSERT_TRUE(mapper.shadeGBuffer(gbuffer,result,&added));
+    for(int c=0;c<3;++c) EXPECT_NEAR(result.getColor(0,0)[c]-baseline.getColor(0,0)[c],0.1*(c+1),1e-6);
+    gbuffer.receivers[0].position.y=-0.001; // Float depth can reconstruct inside the surface.
+    ASSERT_TRUE(mapper.shadeGBuffer(gbuffer,result,&zero));
+    EXPECT_EQ(result.getValues(),baseline.getValues());
+    gbuffer.receivers[0].triangle=1000; EXPECT_FALSE(mapper.shadeGBuffer(gbuffer,result,&zero));
+}

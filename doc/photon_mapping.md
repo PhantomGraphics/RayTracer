@@ -87,3 +87,7 @@ KDTreeとBVHはfloat座標、交差判定と保存パワーはdoubleである。
 初回の96×96、20万放出、32 sppの合成コーネルボックスで描画を確認した。保存数は359,490（直接161,653、間接197,837、caustic 0）。1本の光路が複数の拡散衝突を保存するため、保存数は放出数を超え得る。速度・誤差対品質の本格比較は今後の評価とする。
 
 理論の参考: [Jensenほか: A Practical Guide to Global Illumination using Photon Mapping](https://graphics.stanford.edu/courses/cs348b-01/course8.pdf)。
+
+## GPUでの深度G-buffer集約
+
+[PhotonSplatGpu](../PhotonSplatGpu/README.md) は、同じフォトンを深度G-bufferへ加算スプラットし、同じ受光点でKDTree推定と比較するオプションのVulkanライブラリ。フォトン追跡は引き続きCPUで行う。

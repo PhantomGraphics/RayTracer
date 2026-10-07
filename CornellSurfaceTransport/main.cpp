@@ -2,6 +2,11 @@
 // Geometry is intersected exactly; particles cache outgoing diffuse radiance.
 #include "../../CGLib/Math/Vector3d.h"
 #include "../RayTracer/PhotonMapper.h"
+#ifdef PHOTON_SPLAT_VULKAN
+#include "../PhotonSplatGpu/PhotonSplatGpu.h"
+#include "../../CGLib/VulkanGraphics/VulkanContext.h"
+#include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -235,6 +240,67 @@ bool checks()
     if(ceilingIndirect<=0) return false; // Ceiling cannot see the downward-facing lamp directly.
     return true;
 }
+#ifdef PHOTON_SPLAT_VULKAN
+int comparePhotonSplat(Phantom::RayTracer::PhotonMapper& mapper,
+    const std::vector<Phantom::RayTracer::RtTriangle>& triangles,
+    const Phantom::RayTracer::RtCameraSpec& camera,int size,double radius,
+    const std::filesystem::path& out,const std::filesystem::path& executable,int seed,int directSamples)
+{
+    namespace RT=Phantom::RayTracer;
+    Phantom::VKG::VulkanContext context; Phantom::VKG::VulkanCommandPool pool;
+    struct PoolCleanup { Phantom::VKG::VulkanCommandPool& pool; ~PoolCleanup() { pool.destroy(); } } cleanup{pool};
+    if(!context.createInstance("Photon depth-buffer splatting",{},true) || !context.initDevice(VK_NULL_HANDLE)
+        || !pool.init(&context,VK_NULL_HANDLE)) return 1;
+    // Explicit scope preserves the borrowed context/pool lifetime on every exit.
+    int result=1;
+    {
+        RT::PhotonSplatGpu gpu;
+        if(!gpu.create(context,pool,(executable.parent_path()/"photon_splat_shaders").string())) { std::cerr<<gpu.getLastError()<<'\n'; return 1; }
+        Phantom::Graphics::Imagef gpuIndirect; RT::PhotonGBuffer gbuffer;
+        const auto gpuStart=std::chrono::steady_clock::now();
+        if(!gpu.render(triangles,mapper.getPhotonMap(),camera,size,size,radius,gpuIndirect,gbuffer,
+            RT::PhotonContribution::Indirect,0.1,100)) { std::cerr<<gpu.getLastError()<<'\n'; return 1; }
+        const double gpuWall=seconds(gpuStart);
+        Phantom::Graphics::Imagef kdIndirect(size,size); const auto kdStart=std::chrono::steady_clock::now();
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto& receiver=gbuffer.receivers[y*size+x]; V color(0);
+            if(receiver.triangle>=0) {
+                const auto& t=triangles[receiver.triangle];
+                color=mapper.getPhotonMap().estimateRadiance(receiver.position,receiver.normal,
+                    V(t.albedo[0],t.albedo[1],t.albedo[2]),radius,RT::PhotonContribution::Indirect);
+            }
+            kdIndirect.setColor(x,y,Phantom::Graphics::ColorRGBAf(static_cast<float>(color.x),static_cast<float>(color.y),static_cast<float>(color.z),1));
+        }
+        const double kdWall=seconds(kdStart);
+        double squared=0,referenceSquared=0,maximumError=0; std::size_t valid=0;
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto a=gpuIndirect.getColor(x,y),b=kdIndirect.getColor(x,y);
+            if(gbuffer.receivers[y*size+x].triangle>=0) ++valid;
+            for(int c=0;c<3;++c) { const double delta=static_cast<double>(a[c])-b[c]; squared+=delta*delta; referenceSquared+=static_cast<double>(b[c])*b[c]; maximumError=std::max(maximumError,std::abs(delta)); }
+        }
+        Phantom::Graphics::Imagef gpuImage,kdImage;
+        const auto shadeStart=std::chrono::steady_clock::now();
+        if(!mapper.shadeGBuffer(gbuffer,gpuImage,&gpuIndirect) || !mapper.shadeGBuffer(gbuffer,kdImage,&kdIndirect)) return 1;
+        const double shadeWall=seconds(shadeStart);
+        const auto write=[&](const char* name,const Phantom::Graphics::Imagef& image) {
+            std::vector<V> pixels; pixels.reserve(static_cast<std::size_t>(size)*size);
+            for(int y=0;y<size;++y) for(int x=size-1;x>=0;--x) { const auto c=image.getColor(x,y); pixels.emplace_back(c.x,c.y,c.z); }
+            return writeImage(out/name,pixels,size);
+        };
+        std::error_code error; std::filesystem::create_directories(out,error);
+        if(error || !write("splat",gpuImage) || !write("kdtree",kdImage)
+            || !write("splat_indirect",gpuIndirect) || !write("kdtree_indirect",kdIndirect)) return 1;
+        const auto& stats=gpu.getStats(); std::ofstream csv(out/"splat_metrics.csv");
+        const double relative=std::sqrt(squared/std::max(referenceSquared,1e-30));
+        csv<<"device,size,photon_count,radius,seed,direct_samples,receivers,splatted_photons,photon_build_seconds,gpu_wall_seconds,upload_seconds,submit_readback_seconds,gbuffer_gpu_ms,splat_gpu_ms,copy_gpu_ms,kdtree_gather_seconds,two_composites_seconds,indirect_relative_l2,max_absolute_error\n";
+        csv<<'"'<<context.getDeviceName()<<'"'<<','<<size<<','<<mapper.getStats().emittedPhotons<<','<<radius<<','<<seed<<','<<directSamples<<','<<valid<<','<<stats.splattedPhotons<<','<<mapper.getStats().buildSeconds<<','<<gpuWall<<','<<stats.uploadSeconds<<','<<stats.submitReadbackSeconds<<','<<stats.gbufferGpuMilliseconds<<','<<stats.splatGpuMilliseconds<<','<<stats.copyGpuMilliseconds<<','<<kdWall<<','<<shadeWall<<','<<relative<<','<<maximumError<<'\n';
+        std::cout<<"GPU splat wall="<<gpuWall<<"s GPU pass="<<stats.splatGpuMilliseconds<<"ms KD gather="<<kdWall<<"s relative L2="<<relative<<" max error="<<maximumError<<'\n';
+        // Gross mismatches fail the experiment; small float differences are expected.
+        result=csv.good() && valid>0 && relative<0.01?0:1;
+    }
+    return result;
+}
+#endif
 int runPhotonMapping(int argc,char** argv)
 {
     // --photon out size photonCount gatherRadius spp seed
@@ -261,14 +327,25 @@ int runPhotonMapping(int argc,char** argv)
         }
     }
     Phantom::RayTracer::PhotonMappingSettings cfg;
+    const bool splat=std::string(argv[1])=="--photon-splat";
     cfg.photonCount=static_cast<std::size_t>(count); cfg.gatherRadius=radius;
     cfg.render.width=size; cfg.render.height=size; cfg.render.samplesPerPixel=spp;
     cfg.render.randomSeed=static_cast<std::uint32_t>(seed); cfg.photonMaxDepth=8;
+    if(splat) cfg.directLightSamples=spp;
     Phantom::RayTracer::PhotonMapper mapper(cfg);
     if(!mapper.build(triangles)) { std::cerr<<mapper.getLastError()<<'\n'; return 1; }
     Phantom::RayTracer::RtCameraSpec cam;
     cam.lookFrom[0]=cam.lookFrom[1]=1; cam.lookFrom[2]=-3.2;
     cam.lookAt[0]=cam.lookAt[1]=1; cam.lookAt[2]=1; cam.fovDeg=38;
+    if(splat) {
+#ifdef PHOTON_SPLAT_VULKAN
+        std::error_code error; const auto executable=std::filesystem::absolute(argv[0],error);
+        if(error) return 1;
+        return comparePhotonSplat(mapper,triangles,cam,size,radius,argv[2],executable,seed,spp);
+#else
+        std::cerr<<"This build has no Vulkan photon-splat backend\n"; return 1;
+#endif
+    }
     Phantom::Graphics::Imagef linear; const auto start=std::chrono::steady_clock::now();
     if(!mapper.renderLinear(cam,linear)) return 1;
     const double renderSeconds=seconds(start);
@@ -286,7 +363,7 @@ int runPhotonMapping(int argc,char** argv)
 }
 int main(int argc,char** argv)
 {
-    if(argc>1 && std::string(argv[1])=="--photon") return runPhotonMapping(argc,argv);
+    if(argc>1 && (std::string(argv[1])=="--photon" || std::string(argv[1])=="--photon-splat")) return runPhotonMapping(argc,argv);
     if(argc==2 && std::string(argv[1])=="--check") { const bool ok=checks(); std::cout<<(ok?"Checks passed\n":"Checks failed\n"); return ok?0:1; }
     // Positional parameters keep the experiment reproducible without JSON dependencies.
     if(argc>10) { std::cerr<<"Usage: CornellSurfaceTransport [out size grid samples orders referenceSpp seed reduce displaySpp]\n"; return 1; }

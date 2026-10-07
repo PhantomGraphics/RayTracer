@@ -265,4 +265,34 @@ bool PhotonMapper::render(const RtCameraSpec& camera,Graphics::Imageuc& output) 
     }
     output=std::move(image); return true;
 }
+bool PhotonMapper::shadeGBuffer(const PhotonGBuffer& gbuffer,Graphics::Imagef& output,
+                               const Graphics::Imagef* indirect) const
+{
+    const auto& s=*impl_;
+    if(!s.ready || gbuffer.width<1 || gbuffer.height<1 || gbuffer.width>16384 || gbuffer.height>16384
+        || gbuffer.receivers.size()!=static_cast<std::size_t>(gbuffer.width)*gbuffer.height
+        || (indirect && (indirect->getWidth()!=gbuffer.width || indirect->getHeight()!=gbuffer.height))) return false;
+    Graphics::Imagef image(gbuffer.width,gbuffer.height);
+    for(int y=0;y<gbuffer.height;++y) for(int x=0;x<gbuffer.width;++x) {
+        const auto& p=gbuffer.receivers[static_cast<std::size_t>(y)*gbuffer.width+x]; V color(0);
+        if(p.triangle>=0) {
+            if(p.triangle>=static_cast<int>(s.triangles.size()) || !finite(p.position) || !finite(p.normal)
+                || std::abs(glm::length(p.normal)-1)>1e-6 || s.triangles[p.triangle].mirror) return false;
+            const auto& t=s.triangles[p.triangle];
+            if(glm::dot(t.normal,p.normal)<0.999) return false;
+            Random rng(s.settings.render.randomSeed^0xa511e9b3u^static_cast<std::uint32_t>(y*gbuffer.width+x));
+            V scattered;
+            if(indirect) { const auto c=indirect->getColor(x,y); scattered=V(c.x,c.y,c.z); }
+            else scattered=s.map.estimateRadiance(p.position,p.normal,t.reflectance,s.settings.gatherRadius,PhotonContribution::Indirect);
+            if(!nonnegative(scattered)) return false;
+            // Device depth reconstruction has float error. Start shadow rays on
+            // the actual triangle plane so that a receiver cannot shadow itself.
+            const V surface=p.position-t.normal*glm::dot(p.position-t.a,t.normal);
+            color=t.emission+s.direct({p.triangle,0,surface},rng)+scattered;
+        }
+        if(!nonnegative(color) || maximum(color)>std::numeric_limits<float>::max()) return false;
+        image.setColor(x,y,Graphics::ColorRGBAf(static_cast<float>(color.x),static_cast<float>(color.y),static_cast<float>(color.z),1));
+    }
+    output=std::move(image); return true;
+}
 } // namespace Phantom::RayTracer

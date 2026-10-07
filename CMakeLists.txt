@@ -127,6 +127,29 @@ if(PHANTOM_VULKAN_INCLUDE_DIR)
 phantom_find_vulkan_loader()
 phantom_find_glfw_loader()
 
+if(PHANTOM_VULKAN_LIBRARY)
+    phantom_add_vulkangraphics_core()
+    add_library(RayTracerPhotonGpu STATIC
+        ${RAYTRACER_ROOT}/PhotonSplatGpu/PhotonSplatGpu.cpp)
+    target_link_libraries(RayTracerPhotonGpu PUBLIC RayTracerCore VulkanGraphicsCore ${PHANTOM_VULKAN_LIBRARY})
+    target_compile_options(RayTracerPhotonGpu PRIVATE ${PHANTOM_WARN_FLAGS})
+    target_link_libraries(CornellSurfaceTransport PRIVATE RayTracerPhotonGpu)
+    target_compile_definitions(CornellSurfaceTransport PRIVATE PHOTON_SPLAT_VULKAN=1)
+    add_custom_target(CornellPhotonShaders
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${RAYTRACER_ROOT}/PhotonSplatGpu/shaders
+            $<TARGET_FILE_DIR:CornellSurfaceTransport>/photon_splat_shaders)
+    add_dependencies(CornellSurfaceTransport CornellPhotonShaders)
+    if(PHANTOM_GTEST_FOUND)
+        add_executable(PhotonSplatGpuTest ${RAYTRACER_ROOT}/PhotonSplatGpu/PhotonSplatGpuTest.cpp)
+        target_link_libraries(PhotonSplatGpuTest PRIVATE RayTracerPhotonGpu GTest::gtest GTest::gtest_main)
+        target_compile_definitions(PhotonSplatGpuTest PRIVATE
+            PHOTON_SPLAT_TEST_SHADERS="${RAYTRACER_ROOT}/PhotonSplatGpu/shaders")
+        target_compile_options(PhotonSplatGpuTest PRIVATE ${PHANTOM_WARN_FLAGS})
+        gtest_discover_tests(PhotonSplatGpuTest)
+    endif()
+endif()
+
 if(PHANTOM_VULKAN_LIBRARY AND PHANTOM_GLFW_LIBRARY)
 
 phantom_add_vkappbase_core()
