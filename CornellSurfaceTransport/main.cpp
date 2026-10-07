@@ -4,6 +4,7 @@
 #include "../RayTracer/PhotonMapper.h"
 #ifdef PHOTON_SPLAT_VULKAN
 #include "../PhotonSplatGpu/PhotonSplatGpu.h"
+#include "../PhotonSplatGpu/DepthPhotonTransport.h"
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #endif
@@ -241,6 +242,188 @@ bool checks()
     return true;
 }
 #ifdef PHOTON_SPLAT_VULKAN
+// One timed configuration for comparisons against an independent high-sample
+// reference. Both emission and selection seeds change between ensembles.
+int renderPhotonQuality(const Phantom::RayTracer::PhotonMappingSettings& settings,
+    const std::vector<Phantom::RayTracer::RtTriangle>& triangles,
+    const Phantom::RayTracer::RtCameraSpec& camera,const std::filesystem::path& out,
+    const std::filesystem::path& executable,int ensembles)
+{
+    namespace RT=Phantom::RayTracer;
+    std::error_code error; std::filesystem::create_directories(out,error); if(error) return 1;
+    Phantom::VKG::VulkanContext context; Phantom::VKG::VulkanCommandPool pool;
+    struct Cleanup { Phantom::VKG::VulkanCommandPool& pool; ~Cleanup() { pool.destroy(); } } cleanup{pool};
+    if(!context.createInstance("Photon matched quality",{},true) || !context.initDevice(VK_NULL_HANDLE)
+        || !pool.init(&context,VK_NULL_HANDLE)) return 1;
+    RT::PhotonSplatGpu gpu;
+    if(!gpu.create(context,pool,(executable.parent_path()/"photon_splat_shaders").string())) return 1;
+    const int size=settings.render.width;
+    // Warm up target allocation, pipelines and readback; identical for all modes.
+    RT::PhotonMap empty; empty.build({}); Phantom::Graphics::Imagef indirect; RT::PhotonGBuffer receivers;
+    if(!gpu.render(triangles,empty,camera,size,size,settings.gatherRadius,indirect,receivers,
+        RT::PhotonContribution::Indirect,0.1,100)) return 1;
+    std::vector<V> sums(static_cast<std::size_t>(size)*size,V(0));
+    double buildSeconds=0,gatherSeconds=0,transportSeconds=0,mapSeconds=0,averageSeconds=0;
+    std::size_t rays=0,stored=0;
+    const auto totalStart=std::chrono::steady_clock::now();
+    for(int e=0;e<ensembles;++e) {
+        auto cfg=settings;
+        cfg.render.randomSeed+=static_cast<std::uint32_t>(e)*0x9e3779b9u;
+        cfg.pbvr.randomSeed=cfg.render.randomSeed^0x68bc21ebu;
+        RT::PhotonMapper mapper(cfg);
+        const auto buildStart=std::chrono::steady_clock::now();
+        if(!mapper.build(triangles)) { std::cerr<<mapper.getLastError()<<'\n'; return 1; }
+        buildSeconds+=seconds(buildStart); const auto& stats=mapper.getStats();
+        transportSeconds+=stats.transportSeconds; mapSeconds+=stats.mapBuildSeconds;
+        rays+=stats.tracedRays; stored+=mapper.getPhotonMap().getPhotons().size();
+        const auto gatherStart=std::chrono::steady_clock::now();
+        if(!gpu.render(triangles,mapper.getPhotonMap(),camera,size,size,settings.gatherRadius,indirect,receivers,
+            RT::PhotonContribution::Indirect,0.1,100)) { std::cerr<<gpu.getLastError()<<'\n'; return 1; }
+        gatherSeconds+=seconds(gatherStart);
+        const auto averageStart=std::chrono::steady_clock::now();
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto c=indirect.getColor(x,y); sums[static_cast<std::size_t>(y)*size+x]+=V(c.x,c.y,c.z);
+        }
+        averageSeconds+=seconds(averageStart);
+    }
+    const auto averageStart=std::chrono::steady_clock::now();
+    for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+        const V value=sums[static_cast<std::size_t>(y)*size+x]/static_cast<double>(ensembles);
+        indirect.setColor(x,y,Phantom::Graphics::ColorRGBAf(static_cast<float>(value.x),static_cast<float>(value.y),static_cast<float>(value.z),1));
+    }
+    averageSeconds+=seconds(averageStart);
+    // Same direct-light seed and sample count regardless of transport or ensembles.
+    auto directSettings=settings; directSettings.transport=RT::PhotonTransport::Path;
+    directSettings.photonCount=1; directSettings.photonMaxDepth=1;
+    const auto shadeStart=std::chrono::steady_clock::now();
+    RT::PhotonMapper direct(directSettings); Phantom::Graphics::Imagef combined;
+    if(!direct.build(triangles) || !direct.shadeGBuffer(receivers,combined,&indirect)) return 1;
+    const double shadeSeconds=seconds(shadeStart),totalSeconds=seconds(totalStart);
+    const auto write=[&](const char* name,const Phantom::Graphics::Imagef& image) {
+        std::vector<V> pixels; pixels.reserve(static_cast<std::size_t>(size)*size);
+        for(int y=0;y<size;++y) for(int x=size-1;x>=0;--x) { const auto c=image.getColor(x,y); pixels.emplace_back(c.x,c.y,c.z); }
+        return writeImage(out/name,pixels,size);
+    };
+    if(!write("quality",combined) || !write("quality_indirect",indirect)) return 1;
+    std::ofstream csv(out/"quality_metrics.csv"); csv.precision(12);
+    csv<<"device,mode,size,photon_count,ensembles,radius,seed,retention,cap,traced_rays,stored_photons,transport_seconds,map_seconds,build_seconds,gpu_gather_seconds,average_seconds,shade_seconds,indirect_total_seconds,render_total_seconds,selection,cell_size,build_index,store_direct,direct_samples,max_depth\n";
+    csv<<'"'<<context.getDeviceName()<<'"'<<','<<(settings.transport==RT::PhotonTransport::Path?"path":"pbvr")
+        <<','<<size<<','<<settings.photonCount<<','<<ensembles<<','<<settings.gatherRadius<<','<<settings.render.randomSeed
+        <<','<<settings.pbvr.retention<<','<<settings.pbvr.maxParticles<<','<<rays<<','<<stored
+        <<','<<transportSeconds<<','<<mapSeconds<<','<<buildSeconds<<','<<gatherSeconds<<','<<averageSeconds
+        <<','<<shadeSeconds<<','<<totalSeconds-shadeSeconds<<','<<totalSeconds
+        <<','<<(settings.pbvr.selection==RT::PbvrSelection::Power?"power":(settings.pbvr.selection==RT::PbvrSelection::SpatialPower?"spatial":"uniform"))
+        <<','<<settings.pbvr.spatialCellSize<<','<<settings.buildPhotonIndex<<','<<settings.storeDirectPhotons
+        <<','<<settings.directLightSamples<<','<<settings.photonMaxDepth<<'\n';
+    std::cout<<"Quality render: mode="<<(settings.transport==RT::PhotonTransport::Path?"path":"pbvr")
+        <<" photons="<<settings.photonCount<<" ensembles="<<ensembles<<" total="<<totalSeconds<<"s\n";
+    return csv.good()?0:1;
+}
+int comparePbvrPhotons(const Phantom::RayTracer::PhotonMappingSettings& settings,
+    const std::vector<Phantom::RayTracer::RtTriangle>& triangles,
+    const Phantom::RayTracer::RtCameraSpec& camera,const std::filesystem::path& out,
+    const std::filesystem::path& executable,int ensembles)
+{
+    namespace RT=Phantom::RayTracer;
+    std::error_code error; std::filesystem::create_directories(out,error); if(error) return 1;
+    Phantom::VKG::VulkanContext context; Phantom::VKG::VulkanCommandPool pool;
+    struct Cleanup { Phantom::VKG::VulkanCommandPool& pool; ~Cleanup() { pool.destroy(); } } cleanup{pool};
+    if(!context.createInstance("PBVR staged photon transport",{},true) || !context.initDevice(VK_NULL_HANDLE)
+        || !pool.init(&context,VK_NULL_HANDLE)) return 1;
+    RT::PhotonSplatGpu gpu;
+    if(!gpu.create(context,pool,(executable.parent_path()/"photon_splat_shaders").string())) return 1;
+    const int size=settings.render.width;
+    auto fullSettings=settings; fullSettings.pbvr.retention=1; fullSettings.pbvr.maxParticles=0;
+    RT::PhotonMapper reference(fullSettings);
+    if(!reference.build(triangles)) { std::cerr<<reference.getLastError()<<'\n'; return 1; }
+    Phantom::Graphics::Imagef fullIndirect; RT::PhotonGBuffer receivers;
+    const auto fullGatherStart=std::chrono::steady_clock::now();
+    if(!gpu.render(triangles,reference.getPhotonMap(),camera,size,size,settings.gatherRadius,fullIndirect,receivers,
+        RT::PhotonContribution::Indirect,0.1,100)) { std::cerr<<gpu.getLastError()<<'\n'; return 1; }
+    const double fullGather=seconds(fullGatherStart);
+    const auto write=[&](const std::string& name,const Phantom::Graphics::Imagef& image) {
+        std::vector<V> pixels; pixels.reserve(static_cast<std::size_t>(size)*size);
+        for(int y=0;y<size;++y) for(int x=size-1;x>=0;--x) { const auto c=image.getColor(x,y); pixels.emplace_back(c.x,c.y,c.z); }
+        return writeImage(out/name,pixels,size);
+    };
+    const auto composite=[&](const char* name,const Phantom::Graphics::Imagef& indirect) {
+        Phantom::Graphics::Imagef image;
+        return reference.shadeGBuffer(receivers,image,&indirect) && write(name,image)
+            && write(std::string(name)+"_indirect",indirect);
+    };
+    if(!composite("reference",fullIndirect)) return 1;
+    std::ofstream metrics(out/"pbvr_metrics.csv"),orders(out/"pbvr_orders.csv");
+    metrics<<"mode,ensembles,size,photon_count,radius,emission_seed,retention,cap,mean_traced_rays,mean_stored_photons,mean_transport_seconds,mean_map_seconds,mean_build_seconds,mean_gpu_gather_seconds,total_build_seconds,total_gpu_gather_seconds,indirect_relative_l2,indirect_mean_ratio\n";
+    orders<<"mode,bounce,traced_rays,arrivals,stored_photons,continuation_candidates,retained_particles,stored_flux_r,stored_flux_g,stored_flux_b,reemitted_flux_r,reemitted_flux_g,reemitted_flux_b\n";
+    const auto recordOrders=[&](const char* mode,const std::vector<RT::PhotonBounceStats>& bounces,double divisor) {
+        for(std::size_t b=0;b<bounces.size();++b) {
+            const auto& s=bounces[b]; orders<<mode<<','<<b<<','<<s.tracedRays/divisor<<','<<s.arrivals/divisor<<','<<s.storedPhotons/divisor
+                <<','<<s.continuationCandidates/divisor<<','<<s.retainedParticles/divisor;
+            for(int c=0;c<3;++c) orders<<','<<s.storedFlux[c]/divisor;
+            for(int c=0;c<3;++c) orders<<','<<s.reemittedFlux[c]/divisor;
+            orders<<'\n';
+        }
+    };
+    const auto record=[&](const char* mode,int repetitions,const RT::PhotonMappingStats& stats,double gather,
+                          const Phantom::Graphics::Imagef& image) {
+        double square=0,denominator=0,actualSum=0,referenceSum=0;
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto a=image.getColor(x,y),b=fullIndirect.getColor(x,y);
+            for(int c=0;c<3;++c) { const double delta=static_cast<double>(a[c])-b[c]; square+=delta*delta;
+                denominator+=static_cast<double>(b[c])*b[c]; actualSum+=a[c]; referenceSum+=b[c]; }
+        }
+        const double relative=std::sqrt(square/std::max(denominator,1e-30));
+        const double ratio=actualSum/std::max(referenceSum,1e-30),n=static_cast<double>(repetitions);
+        metrics<<mode<<','<<repetitions<<','<<size<<','<<settings.photonCount<<','<<settings.gatherRadius<<','<<settings.render.randomSeed
+            <<','<<(std::string(mode)=="pbvr"?settings.pbvr.retention:1)<<','<<(std::string(mode)=="pbvr"?settings.pbvr.maxParticles:0)
+            <<','<<stats.tracedRays/n<<','<<(stats.directPhotons+stats.indirectPhotons+stats.causticPhotons)/n
+            <<','<<stats.transportSeconds/n<<','<<stats.mapBuildSeconds/n<<','<<stats.buildSeconds/n<<','<<gather/n
+            <<','<<stats.buildSeconds<<','<<gather<<','<<relative<<','<<ratio<<'\n';
+        std::cout<<mode<<" ensembles="<<repetitions<<" mean rays="<<stats.tracedRays/n
+            <<" mean transport="<<stats.transportSeconds/n<<"s indirect L2="<<relative<<" mean ratio="<<ratio<<'\n';
+    };
+    record("reference",1,reference.getStats(),fullGather,fullIndirect);
+    recordOrders("reference",reference.getStats().bounces,1);
+    // Existing per-path roulette is an independent Monte Carlo reference, not
+    // the paired reference (its random stream and survival decisions differ).
+    auto pathSettings=settings; pathSettings.transport=RT::PhotonTransport::Path;
+    RT::PhotonMapper path(pathSettings); if(!path.build(triangles)) return 1;
+    Phantom::Graphics::Imagef pathIndirect; RT::PhotonGBuffer ignored;
+    const auto pathGatherStart=std::chrono::steady_clock::now();
+    if(!gpu.render(triangles,path.getPhotonMap(),camera,size,size,settings.gatherRadius,pathIndirect,ignored,
+        RT::PhotonContribution::Indirect,0.1,100)) return 1;
+    const double pathGather=seconds(pathGatherStart);
+    record("path",1,path.getStats(),pathGather,pathIndirect); recordOrders("path",path.getStats().bounces,1);
+    if(!composite("path",pathIndirect)) return 1;
+    RT::PhotonMappingStats total; total.bounces.resize(settings.photonMaxDepth);
+    std::vector<V> sums(static_cast<std::size_t>(size)*size,V(0)); double totalGather=0;
+    Phantom::Graphics::Imagef average(size,size);
+    for(int e=0;e<ensembles;++e) {
+        auto cfg=settings; cfg.pbvr.randomSeed=settings.pbvr.randomSeed+static_cast<std::uint32_t>(e)*0x9e3779b9u;
+        RT::PhotonMapper thin(cfg); if(!thin.build(triangles)) { std::cerr<<thin.getLastError()<<'\n'; return 1; }
+        Phantom::Graphics::Imagef indirect; const auto gatherStart=std::chrono::steady_clock::now();
+        if(!gpu.render(triangles,thin.getPhotonMap(),camera,size,size,settings.gatherRadius,indirect,ignored,
+            RT::PhotonContribution::Indirect,0.1,100)) { std::cerr<<gpu.getLastError()<<'\n'; return 1; }
+        totalGather+=seconds(gatherStart); const auto& s=thin.getStats();
+        total.tracedRays+=s.tracedRays; total.directPhotons+=s.directPhotons; total.indirectPhotons+=s.indirectPhotons; total.causticPhotons+=s.causticPhotons;
+        total.transportSeconds+=s.transportSeconds; total.mapBuildSeconds+=s.mapBuildSeconds; total.buildSeconds+=s.buildSeconds;
+        for(std::size_t b=0;b<s.bounces.size();++b) {
+            auto& a=total.bounces[b]; const auto& v=s.bounces[b];
+            a.tracedRays+=v.tracedRays; a.arrivals+=v.arrivals; a.storedPhotons+=v.storedPhotons;
+            a.continuationCandidates+=v.continuationCandidates; a.retainedParticles+=v.retainedParticles;
+            a.storedFlux+=v.storedFlux; a.reemittedFlux+=v.reemittedFlux;
+        }
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto c=indirect.getColor(x,y); auto& sum=sums[static_cast<std::size_t>(y)*size+x]; sum+=V(c.x,c.y,c.z);
+            const V value=sum/static_cast<double>(e+1);
+            average.setColor(x,y,Phantom::Graphics::ColorRGBAf(static_cast<float>(value.x),static_cast<float>(value.y),static_cast<float>(value.z),1));
+        }
+        record("pbvr",e+1,total,totalGather,average);
+        if(e==0) { recordOrders("pbvr_first",s.bounces,1); if(!composite("pbvr_first",indirect)) return 1; }
+    }
+    recordOrders("pbvr_mean",total.bounces,ensembles);
+    return composite("pbvr_mean",average) && metrics.good() && orders.good()?0:1;
+}
 int comparePhotonSplat(Phantom::RayTracer::PhotonMapper& mapper,
     const std::vector<Phantom::RayTracer::RtTriangle>& triangles,
     const Phantom::RayTracer::RtCameraSpec& camera,int size,double radius,
@@ -301,10 +484,97 @@ int comparePhotonSplat(Phantom::RayTracer::PhotonMapper& mapper,
     return result;
 }
 #endif
+int runDepthPhotons(int argc,char** argv)
+{
+#ifdef PHOTON_SPLAT_VULKAN
+    namespace RT=Phantom::RayTracer;
+    if(argc!=12) {
+        std::cerr<<"Usage: --photon-depth out imageSize lightSamples firstResolution minResolution maxDepth cap seed radius dropEvery\n";
+        return 1;
+    }
+    const auto integer=[](const char* text,int maximum) {
+        char* end=nullptr; const long n=std::strtol(text,&end,10);
+        return end!=text && *end=='\0' && n>=0 && n<=maximum?static_cast<int>(n):-1;
+    };
+    const int size=integer(argv[3],2048),lights=integer(argv[4],100000),resolution=integer(argv[5],1024);
+    const int minimum=integer(argv[6],1024),depth=integer(argv[7],64),cap=integer(argv[8],100000);
+    const int seed=integer(argv[9],1000000000),drop=integer(argv[11],64);
+    char* end=nullptr; const double radius=std::strtod(argv[10],&end);
+    if(size<1 || lights<1 || resolution<2 || minimum<2 || minimum>resolution || depth<1 || cap<1
+        || seed<0 || drop<0 || end==argv[10] || *end!='\0' || !std::isfinite(radius) || radius<=0) return 1;
+    std::vector<RT::RtTriangle> triangles;
+    for(const auto& q:cornell()) {
+        V u=q.u,v=q.v;
+        if(glm::dot(glm::cross(u,v),q.normal)<0) std::swap(u,v);
+        const V vertices[]={q.origin,q.origin+u,q.origin+u+v,q.origin+v};
+        for(const auto& ids:{std::vector<int>{0,1,2},std::vector<int>{0,2,3}}) {
+            RT::RtTriangle t; t.roughness=1;
+            for(int c=0;c<3;++c) {
+                t.v0[c]=vertices[ids[0]][c]; t.v1[c]=vertices[ids[1]][c]; t.v2[c]=vertices[ids[2]][c];
+                t.albedo[c]=q.reflectance[c]; t.emission[c]=q.emission[c];
+            }
+            triangles.push_back(t);
+        }
+    }
+    std::error_code error; const auto executable=std::filesystem::absolute(argv[0],error); if(error) return 1;
+    const std::filesystem::path out=argv[2]; std::filesystem::create_directories(out,error); if(error) return 1;
+    Phantom::VKG::VulkanContext context; Phantom::VKG::VulkanCommandPool pool;
+    struct Cleanup { Phantom::VKG::VulkanCommandPool& pool; ~Cleanup() { pool.destroy(); } } cleanup{pool};
+    if(!context.createInstance("Depth-map PBVR transport",{},true) || !context.initDevice(VK_NULL_HANDLE)
+        || !pool.init(&context,VK_NULL_HANDLE)) return 1;
+    RT::PhotonSplatGpu gpu;
+    if(!gpu.create(context,pool,(executable.parent_path()/"photon_splat_shaders").string())) return 1;
+    RT::DepthPhotonSettings settings; settings.lightSamples=lights; settings.firstResolution=resolution;
+    settings.minResolution=minimum; settings.maxDepth=depth; settings.selection.maxParticles=cap;
+    settings.randomSeed=static_cast<std::uint32_t>(seed); settings.resolutionDropEvery=drop;
+    RT::DepthPhotonTransport transport; RT::PhotonMap map;
+    const auto start=std::chrono::steady_clock::now();
+    if(!transport.build(gpu,triangles,settings,map)) { std::cerr<<transport.getLastError()<<'\n'; return 1; }
+    RT::RtCameraSpec camera; camera.lookFrom[0]=camera.lookFrom[1]=1; camera.lookFrom[2]=-3.2;
+    camera.lookAt[0]=camera.lookAt[1]=1; camera.lookAt[2]=1; camera.fovDeg=38;
+    Phantom::Graphics::Imagef indirect,combined; RT::PhotonGBuffer receivers;
+    if(!gpu.render(triangles,map,camera,size,size,radius,indirect,receivers,RT::PhotonContribution::Indirect,0.1,100)) {
+        std::cerr<<gpu.getLastError()<<'\n'; return 1;
+    }
+    RT::PhotonMappingSettings shading; shading.photonMaxDepth=depth; shading.gatherRadius=radius;
+    shading.buildPhotonIndex=false; shading.storeDirectPhotons=false; shading.directLightSamples=32;
+    shading.render.randomSeed=static_cast<std::uint32_t>(seed);
+    RT::PhotonMapper mapper(shading);
+    const std::vector<RT::Photon> empty;
+    if(!mapper.buildWithPhotons(triangles,empty) || !mapper.shadeGBuffer(receivers,combined,&indirect)) return 1;
+    const double total=seconds(start);
+    const auto write=[&](const char* name,const Phantom::Graphics::Imagef& image) {
+        std::vector<V> pixels;
+        for(int y=0;y<size;++y) for(int x=size-1;x>=0;--x) { const auto c=image.getColor(x,y); pixels.emplace_back(c.x,c.y,c.z); }
+        return writeImage(out/name,pixels,size);
+    };
+    if(!write("depth",combined) || !write("depth_indirect",indirect)) return 1;
+    std::ofstream orders(out/"depth_orders.csv"); orders.precision(12);
+    orders<<"bounce,resolution,sources,depth_maps,arrivals,retained,launched_r,launched_g,launched_b,arrived_r,arrived_g,arrived_b,escaped_r,escaped_g,escaped_b\n";
+    const auto& stats=transport.getStats();
+    for(std::size_t b=0;b<stats.bounces.size();++b) {
+        const auto& s=stats.bounces[b]; orders<<b<<','<<s.resolution<<','<<s.sources<<','<<s.depthMaps<<','<<s.arrivals<<','<<s.retained;
+        for(const V value:{s.launchedFlux,s.arrivedFlux,s.escapedFlux}) for(int c=0;c<3;++c) orders<<','<<value[c];
+        orders<<'\n';
+    }
+    std::ofstream metrics(out/"depth_metrics.csv"); metrics.precision(12);
+    metrics<<"device,size,light_samples,first_resolution,min_resolution,max_depth,cap,seed,radius,drop_every,stored_photons,transport_seconds,total_seconds,transport_rays\n";
+    metrics<<'"'<<context.getDeviceName()<<'"'<<','<<size<<','<<lights<<','<<resolution<<','<<minimum<<','<<depth
+        <<','<<cap<<','<<seed<<','<<radius<<','<<drop<<','<<map.getPhotons().size()<<','<<stats.seconds<<','<<total<<",0\n";
+    std::cout<<"Depth transport="<<stats.seconds<<"s total="<<total<<"s (transport rays=0)\n";
+    return metrics.good()&&orders.good()?0:1;
+#else
+    (void)argc; (void)argv; std::cerr<<"Depth-map photon transport requires Vulkan\n"; return 1;
+#endif
+}
 int runPhotonMapping(int argc,char** argv)
 {
     // --photon out size photonCount gatherRadius spp seed
-    if(argc!=8) { std::cerr<<"Usage: CornellSurfaceTransport --photon out size photonCount gatherRadius spp seed\n"; return 1; }
+    const bool pbvr=std::string(argv[1])=="--photon-pbvr";
+    const bool quality=std::string(argv[1])=="--photon-quality";
+    if((quality && argc!=12 && argc!=16) || (!quality && argc!=(pbvr?11:8))) {
+        std::cerr<<"Usage: CornellSurfaceTransport --photon[-splat|-pbvr|-quality] out size photonCount gatherRadius spp seed [mode] [retention cap ensembles] [selection cellSize buildIndex storeDirect]\n"; return 1;
+    }
     const auto integer=[](const char* text,int maximum) {
         char* end=nullptr; const long value=std::strtol(text,&end,10);
         return end!=text && *end=='\0' && value>=0 && value<=maximum?static_cast<int>(value):-1;
@@ -331,12 +601,47 @@ int runPhotonMapping(int argc,char** argv)
     cfg.photonCount=static_cast<std::size_t>(count); cfg.gatherRadius=radius;
     cfg.render.width=size; cfg.render.height=size; cfg.render.samplesPerPixel=spp;
     cfg.render.randomSeed=static_cast<std::uint32_t>(seed); cfg.photonMaxDepth=8;
-    if(splat) cfg.directLightSamples=spp;
-    Phantom::RayTracer::PhotonMapper mapper(cfg);
-    if(!mapper.build(triangles)) { std::cerr<<mapper.getLastError()<<'\n'; return 1; }
+    if(splat || pbvr || quality) cfg.directLightSamples=spp;
     Phantom::RayTracer::RtCameraSpec cam;
     cam.lookFrom[0]=cam.lookFrom[1]=1; cam.lookFrom[2]=-3.2;
     cam.lookAt[0]=cam.lookAt[1]=1; cam.lookAt[2]=1; cam.fovDeg=38;
+    int ensembles=1;
+    if(pbvr || quality) {
+        const int offset=quality?1:0;
+        char* retentionEnd=nullptr; cfg.pbvr.retention=std::strtod(argv[8+offset],&retentionEnd);
+        const int cap=integer(argv[9+offset],10000000); ensembles=integer(argv[10+offset],1024);
+        if(retentionEnd==argv[8+offset] || *retentionEnd!='\0' || !std::isfinite(cfg.pbvr.retention)
+            || cfg.pbvr.retention<=0 || cfg.pbvr.retention>1 || cap<0 || ensembles<1) return 1;
+        cfg.transport=Phantom::RayTracer::PhotonTransport::Pbvr;
+        if(quality) {
+            const std::string mode=argv[8];
+            if(mode=="path") cfg.transport=Phantom::RayTracer::PhotonTransport::Path;
+            else if(mode!="pbvr") return 1;
+            cfg.buildPhotonIndex=false; cfg.storeDirectPhotons=false;
+            if(argc==16) {
+                const std::string selection=argv[12];
+                if(selection=="power") cfg.pbvr.selection=Phantom::RayTracer::PbvrSelection::Power;
+                else if(selection=="spatial") cfg.pbvr.selection=Phantom::RayTracer::PbvrSelection::SpatialPower;
+                else if(selection!="uniform") return 1;
+                char* cellEnd=nullptr; cfg.pbvr.spatialCellSize=std::strtod(argv[13],&cellEnd);
+                const int index=integer(argv[14],1),direct=integer(argv[15],1);
+                if(cellEnd==argv[13] || *cellEnd!='\0' || !std::isfinite(cfg.pbvr.spatialCellSize)
+                    || cfg.pbvr.spatialCellSize<0 || index<0 || direct<0) return 1;
+                cfg.buildPhotonIndex=index!=0; cfg.storeDirectPhotons=direct!=0;
+            }
+        }
+        cfg.pbvr.maxParticles=static_cast<std::size_t>(cap); cfg.pbvr.randomSeed=static_cast<std::uint32_t>(seed)^0x68bc21ebu;
+#ifdef PHOTON_SPLAT_VULKAN
+        std::error_code error; const auto executable=std::filesystem::absolute(argv[0],error);
+        if(error) return 1;
+        if(quality) return renderPhotonQuality(cfg,triangles,cam,argv[2],executable,ensembles);
+        return comparePbvrPhotons(cfg,triangles,cam,argv[2],executable,ensembles);
+#else
+        std::cerr<<"This comparison requires Vulkan photon splatting\n"; return 1;
+#endif
+    }
+    Phantom::RayTracer::PhotonMapper mapper(cfg);
+    if(!mapper.build(triangles)) { std::cerr<<mapper.getLastError()<<'\n'; return 1; }
     if(splat) {
 #ifdef PHOTON_SPLAT_VULKAN
         std::error_code error; const auto executable=std::filesystem::absolute(argv[0],error);
@@ -363,7 +668,8 @@ int runPhotonMapping(int argc,char** argv)
 }
 int main(int argc,char** argv)
 {
-    if(argc>1 && (std::string(argv[1])=="--photon" || std::string(argv[1])=="--photon-splat")) return runPhotonMapping(argc,argv);
+    if(argc>1 && std::string(argv[1])=="--photon-depth") return runDepthPhotons(argc,argv);
+    if(argc>1 && (std::string(argv[1])=="--photon" || std::string(argv[1])=="--photon-splat" || std::string(argv[1])=="--photon-pbvr" || std::string(argv[1])=="--photon-quality")) return runPhotonMapping(argc,argv);
     if(argc==2 && std::string(argv[1])=="--check") { const bool ok=checks(); std::cout<<(ok?"Checks passed\n":"Checks failed\n"); return ok?0:1; }
     // Positional parameters keep the experiment reproducible without JSON dependencies.
     if(argc>10) { std::cerr<<"Usage: CornellSurfaceTransport [out size grid samples orders referenceSpp seed reduce displaySpp]\n"; return 1; }

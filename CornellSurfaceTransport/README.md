@@ -73,3 +73,10 @@ CornellSurfaceTransport [out size grid samples orders referenceSpp seed reduce d
 詳細は [PhotonMapperのAPIと実行手順](../doc/photon_mapping.md) を参照。従来の表面粒子方式とは、推定方法・反射深度・サンプル条件が異なるため、単純な実行時間比を同品質での性能比としない。
 
 同じフォトン集合をGPUで加算集約する `--photon-splat` モードも追加した。[GPU集約の実行手順と計測の範囲](../PhotonSplatGpu/README.md) を参照。
+
+## 到着点を間引くPBVRフォトン輸送
+
+`--photon-pbvr` と `run_pbvr_photons.ps1` で、到着点を保存した後に間引いて再放出するライブラリ実装を比較できる。[API・アルゴリズム・実行方法](../doc/pbvr_photon_transport.md) を参照。
+# 深度マップによるフォトン輸送
+
+`--photon-depth` に、半球5方向の深度マップを使って到着点を生成する輸送を追加した。次数ごとの解像度低下と再放出点の抽出に対応する。[API・実行引数・検証結果](../doc/depth_photon_transport.md)。ユーザー承認後にビルド、CPU40件・GPU11件のテスト、小規模レンダリングを実施した。同品質での高速化は未確認。

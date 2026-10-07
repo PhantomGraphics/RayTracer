@@ -73,6 +73,7 @@ phantom_add_space_core()
 add_library(RayTracerCore STATIC
     ${RAYTRACER_ROOT}/RayTracer/PathTracer.cpp
     ${RAYTRACER_ROOT}/RayTracer/PhotonMapper.cpp
+    ${RAYTRACER_ROOT}/RayTracer/PbvrResampler.cpp
 )
 target_include_directories(RayTracerCore PRIVATE ${REPO_ROOT})
 target_link_libraries(RayTracerCore PUBLIC MathCore GraphicsCore SpaceCore)
@@ -130,7 +131,8 @@ phantom_find_glfw_loader()
 if(PHANTOM_VULKAN_LIBRARY)
     phantom_add_vulkangraphics_core()
     add_library(RayTracerPhotonGpu STATIC
-        ${RAYTRACER_ROOT}/PhotonSplatGpu/PhotonSplatGpu.cpp)
+        ${RAYTRACER_ROOT}/PhotonSplatGpu/PhotonSplatGpu.cpp
+        ${RAYTRACER_ROOT}/PhotonSplatGpu/DepthPhotonTransport.cpp)
     target_link_libraries(RayTracerPhotonGpu PUBLIC RayTracerCore VulkanGraphicsCore ${PHANTOM_VULKAN_LIBRARY})
     target_compile_options(RayTracerPhotonGpu PRIVATE ${PHANTOM_WARN_FLAGS})
     target_link_libraries(CornellSurfaceTransport PRIVATE RayTracerPhotonGpu)
