@@ -25,8 +25,11 @@ RayTracerApp::RayTracerApp(int width, int height, const std::string& title)
     // Standard screen: render area + menu + Command + Outliner; the rest is
     // opened from the View menu / outliner.
     shell_.setDispatcher(&dispatcher_);
-    shell_.registerPanel("RayTracer View", {0.70f, 0.00f, 0.30f, 0.66f});
+    shell_.registerPanel("Outliner", {0.f, 0.f, 0.20f, 0.66f},false);
+    shell_.registerPanel("Command", {0.f, 0.68f, 0.62f, 0.32f},false);
+    shell_.registerPanel("RayTracer View", {0.735f, 0.04f, 0.26f, 0.95f},true);
     shell_.registerPanel("Ray Trace Result", {0.30f, 0.05f, 0.40f, 0.55f});
+    shell_.registerPanel("PBVR Progressive Preview", {0.01f, 0.05f, 0.66f, 0.90f});
     shell_.registerPanel("Scenario Browser", {0.30f, 0.05f, 0.40f, 0.55f});
     shell_.setOutlinerProvider([this] {
         std::vector<ViewShell::OutlinerItem> items;
@@ -38,6 +41,7 @@ RayTracerApp::RayTracerApp(int width, int height, const std::string& title)
         if (resultPanel_.hasResult())
             items.push_back({3, "Ray trace result: " + std::to_string(resultPanel_.lastWidth()) + "x" +
                                 std::to_string(resultPanel_.lastHeight()), "Ray Trace Result"});
+        items.push_back({4,"PBVR Cornell preview: " + std::to_string(pbvrPanel_.samples()) + " passes","PBVR Progressive Preview"});
         return items;
     });
     menuPanel_.setShell(&shell_);
@@ -54,6 +58,8 @@ void RayTracerApp::onImGuiReady()
 {
     // Context exists, imgui.ini is not read until the first frame.
     shell_.installSettings();
+    shell_.setPanelVisible("Outliner",false);
+    shell_.setPanelVisible("Command",false);
 }
 
 void RayTracerApp::onImGui()
@@ -68,6 +74,7 @@ void RayTracerApp::onImGui()
     }
     shell_.drawWindows();
     ::VKG::VkAppBase::onImGui();
+    pbvrPanel_.onImGui();
     scenarioBrowser_.pumpQueue();
     if (shell_.beginPanel("Scenario Browser")) {
         scenarioBrowser_.drawEmbedded();
@@ -81,6 +88,7 @@ void RayTracerApp::onInit()
     ::VKG::VkAppBase::onInit();
     renderer_.setExtent(getExtent());
     resultPanel_.init(&getContext(), &getCommandPool());
+    pbvrPanel_.init(getContext(),getCommandPool(),shell_);
     setupCallbacks();
 }
 
@@ -88,7 +96,7 @@ void RayTracerApp::applyShaders()
 {
     GltfSceneRenderer::Shaders s;
     s.vertSpv       = ::VKG::loadSPVRepo("shaders/gltf.vert.spv");
-    s.fragSpv       = ::VKG::loadSPVRepo("shaders/gltf.frag.spv");
+    s.fragSpv       = ::VKG::loadSPVRepo("raytracer_shaders/gltf_pbvr.frag.spv");
     s.skyboxVertSpv = ::VKG::loadSPVRepo("shaders/skybox.vert.spv");
     s.skyboxFragSpv = ::VKG::loadSPVRepo("shaders/skybox.frag.spv");
     renderer_.setShaders(std::move(s));
@@ -104,6 +112,23 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
     menuPanel_.setRendering(resultPanel_.isRendering());
 
     dispatcher_.processQueue();
+    pbvrPanel_.update();
+    if(auto response=pbvrPanel_.takeDemoResponse()) {
+        if(pbvrDemoPending_) { dispatcher_.signalPbvrDone(*response); pbvrDemoPending_=false; }
+    }
+    if(pbvrWaitSamples_>=0) {
+        if(pbvrWaitGltf_ && !gltfPbvr_.available()) {
+            dispatcher_.signalPbvrDone("Error:"+gltfPbvr_.status()); pbvrWaitSamples_=-1;
+        } else if(pbvrWaitGltf_ && gltfPbvr_.samples()>=pbvrWaitSamples_) {
+            dispatcher_.signalPbvrDone("OK:glTF PBVR samples="+std::to_string(gltfPbvr_.samples())); pbvrWaitSamples_=-1;
+        } else if(!pbvrWaitGltf_ && !pbvrPanel_.error().empty()) {
+            dispatcher_.signalPbvrDone("Error:"+pbvrPanel_.error()); pbvrWaitSamples_=-1;
+        } else if(!pbvrWaitGltf_ && pbvrPanel_.samples()>=pbvrWaitSamples_) {
+            dispatcher_.signalPbvrDone("OK:PBVR samples="+std::to_string(pbvrPanel_.samples())); pbvrWaitSamples_=-1;
+        } else if(std::chrono::steady_clock::now()>pbvrDeadline_) {
+            dispatcher_.signalPbvrDone("Error:PBVR wait timeout"); pbvrWaitSamples_=-1;
+        }
+    }
 
     // Single place that collects responses: first the ones for commands typed
     // into the Command window (scenario commands included -- they run through
@@ -113,6 +138,7 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
     shell_.consumeResponses(responses);
     shell_.setScenarioActive(runner_.isActive());
     menuPanel_.setLocked(runner_.isActive());
+    pbvrPanel_.setLocked(runner_.isActive());
 
     if (auto p = dispatcher_.takePendingLoad()) {
         const bool ok = std::filesystem::exists(*p);
@@ -154,6 +180,7 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
     } else {
     }
 
+    gltfPbvr_.update(renderer_);
     ::VKG::VkAppBase::onUpdate(frameIndex);
 }
 
@@ -164,8 +191,27 @@ void RayTracerApp::onSwapChainCreated()
 
 void RayTracerApp::onCleanup()
 {
+    gltfPbvr_.cleanup();
+    pbvrPanel_.cleanup(getDevice());
     resultPanel_.cleanup(getDevice());
     ::VKG::VkAppBase::onCleanup();
+}
+bool RayTracerApp::runPbvrDemo(const std::filesystem::path& directory)
+{
+    if(pbvrDemoPending_ || pbvrWaitSamples_>=0 || !pbvrPanel_.startDemo(directory)) return false;
+    pbvrDemoPending_=true; return true;
+}
+bool RayTracerApp::waitPbvrSamples(int count)
+{
+    if(count<1 || count>32 || pbvrDemoPending_ || pbvrWaitSamples_>=0) return false;
+    pbvrWaitGltf_=false;
+    pbvrWaitSamples_=count; pbvrDeadline_=std::chrono::steady_clock::now()+std::chrono::seconds(60); return true;
+}
+bool RayTracerApp::waitGltfPbvrSamples(int count)
+{
+    if(count<1 || count>32 || pbvrDemoPending_ || pbvrWaitSamples_>=0 || !gltfPbvr_.available()) return false;
+    pbvrWaitGltf_=true;
+    pbvrWaitSamples_=count; pbvrDeadline_=std::chrono::steady_clock::now()+std::chrono::seconds(60); return true;
 }
 
 void RayTracerApp::loadGltf(const std::filesystem::path& path)
@@ -182,10 +228,18 @@ void RayTracerApp::loadGltf(const std::filesystem::path& path)
     }
     doc_ = std::move(*doc);
     renderer_.setDocument(doc_);
+    gltfPbvr_.setScene(doc_);
     menuPanel_.setFilePath(path);
 
     assetCamera_   = extractFirstCamera(doc_);
     useAssetCamera_ = false; // stay on the live orbit camera until the user opts in
+}
+
+void RayTracerApp::loadDefaultGltf()
+{
+    loadGltf(Phantom::VKG::detail::detectModuleDir()/"samples/pbvr_cornell.gltf");
+    *renderer_.camDistPtr()=4.2f;
+    shell_.setPanelVisible("RayTracer View",true);
 }
 
 void RayTracerApp::reloadFile(const std::filesystem::path& path)

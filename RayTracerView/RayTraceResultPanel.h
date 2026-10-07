@@ -38,6 +38,9 @@ public:
     // Screenshot: of the same camera/scene, Phase 4B item 5's "raster vs offline" report).
     bool hasResult() const { return texW_ > 0 && texH_ > 0; }
     bool saveResult(const std::string& path) const;
+    // Main-thread presentation for an externally completed renderer.
+    void present(const Phantom::Graphics::Imageuc& image);
+    void drawImage(); // Inside an already-open ImGui panel; fits both axes.
 
     void onImGui() override;
 

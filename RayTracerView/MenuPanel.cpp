@@ -70,12 +70,15 @@ void MenuPanel::onImGui()
             send(useAssetCam ? "SetUseAssetCamera:1" : "SetUseAssetCamera:0");
         if (!hasAssetCam) ImGui::EndDisabled();
         if (!hasAssetCam) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("(no Perspective camera in this glTF)");
+            ImGui::TextDisabled("(no asset camera)");
         }
     }
 
     // --- Ray trace settings ---
+    ImGui::Separator();
+    if(app_) app_->drawGltfPbvrControls();
+    ImGui::Separator();
+    if(ImGui::Button("PBVR Cornell Preview") && app_) app_->startPbvrPreview();
     ImGui::Separator();
     ImGui::Text("Ray Trace Settings");
     ImGui::Checkbox("Lock aspect to viewport", &lockAspectToViewport_);
