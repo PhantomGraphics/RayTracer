@@ -166,7 +166,10 @@ public:
         const Math::Vector3df d(
             (float)ray.direction.x, (float)ray.direction.y, (float)ray.direction.z);
 
-        const auto candidates = m_bvh->queryRay(o, d, (float)tMin, (float)tMax);
+        // hit() is const and may run on several render threads: each thread reuses its own candidate
+        // buffer, so a ray costs no allocation once the buffer has grown.
+        thread_local std::vector<Space::BVHObject*> candidates;
+        m_bvh->queryRay(o, d, candidates, (float)tMin, (float)tMax);
 
         HitRecord temp;
         bool hasHit = false;
