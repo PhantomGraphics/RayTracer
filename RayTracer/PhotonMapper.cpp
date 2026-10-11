@@ -119,8 +119,10 @@ struct PhotonMapper::Impl {
     Hit hit(V origin,V direction,double limit=1e30) const
     {
         Hit result; result.distance=limit;
-        for(const auto* object:bvh->queryRay(Math::Vector3df(origin),Math::Vector3df(direction),
-                    static_cast<float>(settings.rayEpsilon),static_cast<float>(std::min(limit,1e30)))) {
+        thread_local std::vector<Space::BVHObject*> candidates; // per-thread buffer, reused across rays
+        bvh->queryRay(Math::Vector3df(origin),Math::Vector3df(direction),candidates,
+                    static_cast<float>(settings.rayEpsilon),static_cast<float>(std::min(limit,1e30)));
+        for(const auto* object:candidates) {
             const auto& t=triangles[object->id];
             const V e1=t.b-t.a,e2=t.c-t.a,p=glm::cross(direction,e2);
             const double determinant=glm::dot(e1,p);
