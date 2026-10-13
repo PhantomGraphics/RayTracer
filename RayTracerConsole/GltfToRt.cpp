@@ -2,8 +2,8 @@
 #include "GltfToRt.h"
 
 #include "CGLib/Math/glm.h"
-#include "CGLib/ThirdParty/glm-0.9.9.8/glm/gtc/matrix_transform.hpp"
-#include "CGLib/ThirdParty/glm-0.9.9.8/glm/gtc/quaternion.hpp"
+#include "CGLib/ThirdParty/glm/glm/gtc/matrix_transform.hpp"
+#include "CGLib/ThirdParty/glm/glm/gtc/quaternion.hpp"
 
 // stb_image implementation is compiled into Graphics.lib (ImageFileReader.cpp).
 // Include the header only — do NOT define STB_IMAGE_IMPLEMENTATION here.
