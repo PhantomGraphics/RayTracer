@@ -13,8 +13,11 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 
+std::atomic<bool> g_quiet{false};  // set by the textured/lit scene render from RenderSettings::quiet
+
 void reportProgress(const int y, const int height, int& nextPercent)
 {
+    if (g_quiet.load()) return;
     const int donePercent = static_cast<int>((100.0 * static_cast<double>(y + 1)) / static_cast<double>(height));
     if (donePercent >= nextPercent) {
         std::cout << "  " << nextPercent << "%" << std::endl;
@@ -1163,7 +1166,9 @@ static bool renderTriangleSceneWithTextures(
         return texObjs[idx];
     };
 
+    g_quiet.store(settings.quiet);
     const auto start = std::chrono::steady_clock::now();
+    if (!settings.quiet)
     std::cout << "Rendering glTF scene (" << triangles.size() << " triangles, "
               << textures.size() << " textures): "
               << settings.width << "x" << settings.height
@@ -1206,7 +1211,8 @@ static bool renderTriangleSceneWithTextures(
                         });
 
     const auto end = std::chrono::steady_clock::now();
-    std::cout << "Render complete in "
+    if (!settings.quiet)
+        std::cout << "Render complete in "
               << (std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0)
               << " sec" << std::endl;
     return true;
