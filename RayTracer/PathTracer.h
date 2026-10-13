@@ -15,6 +15,7 @@ struct RenderSettings {
     int samplesPerPixel = 12;
     int maxDepth = 8;
     std::uint32_t randomSeed = 20260413u;
+    bool quiet = false;  // no progress / timing output (interactive viewports render many small passes)
 };
 
 struct RtCameraSpec {
