@@ -1005,7 +1005,8 @@ Graphics::ColorRGBAuc toRGBA(const Vec3& color, const int samplesPerPixel)
 template <typename TraceRayFn>
 void renderRowsParallel(Graphics::Imageuc& output, const Camera& camera,
                          int width, int height, int spp, std::uint32_t baseSeed,
-                         TraceRayFn&& traceRay)
+                         TraceRayFn&& traceRay,
+                         const std::atomic<bool>* cancel = nullptr, std::atomic<int>* progressRows = nullptr)
 {
     output = Graphics::Imageuc(width, height);
 
@@ -1025,6 +1026,7 @@ void renderRowsParallel(Graphics::Imageuc& output, const Camera& camera,
             Random random(baseSeed + static_cast<std::uint32_t>(t) * 0x9E3779B1u + 1u);
             int y;
             while ((y = nextRow.fetch_add(1)) < height) {
+                if (cancel && cancel->load()) break;
                 for (int x = 0; x < width; ++x) {
                     Vec3 color(0.0);
                     for (int s = 0; s < spp; ++s) {
@@ -1035,6 +1037,7 @@ void renderRowsParallel(Graphics::Imageuc& output, const Camera& camera,
                     output.setColor(x, y, toRGBA(color, spp));
                 }
                 const int done = ++rowsDone;
+                if (progressRows) progressRows->store(done);
                 std::lock_guard<std::mutex> lock(progressMutex);
                 reportProgress(done - 1, height, nextPercent);
             }
@@ -1208,7 +1211,9 @@ static bool renderTriangleSceneWithTextures(
                         settings.samplesPerPixel, settings.randomSeed,
                         [&](const Ray& ray, Random& random) {
                             return traceGltf(ray, world, settings.maxDepth, random, lights);
-                        });
+                        },
+                        settings.cancel, settings.progressRows);
+    if (settings.cancel && settings.cancel->load()) return false;
 
     const auto end = std::chrono::steady_clock::now();
     if (!settings.quiet)

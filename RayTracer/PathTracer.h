@@ -3,6 +3,7 @@
 #include "../../CGLib/Graphics/Image.h"
 #include "../../CGLib/Math/Vector3d.h"
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -16,6 +17,9 @@ struct RenderSettings {
     int maxDepth = 8;
     std::uint32_t randomSeed = 20260413u;
     bool quiet = false;  // no progress / timing output (interactive viewports render many small passes)
+    // Optional controls of a long render (the caller owns the objects; they must outlive the call).
+    const std::atomic<bool>* cancel = nullptr;  // set to true to stop early: render() then returns false
+    std::atomic<int>* progressRows = nullptr;   // number of finished image rows
 };
 
 struct RtCameraSpec {
