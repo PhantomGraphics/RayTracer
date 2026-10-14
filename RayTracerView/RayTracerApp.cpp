@@ -3,7 +3,7 @@
 #include "GltfSceneBuilder.h"
 
 #include "../../CGLib/GltfRenderer/Gltf/GltfReader.h"
-#include "../../CGLib/VulkanGraphics/VulkanSPVResolver.h"
+#include "../../CGLib/VulkanGraphics/SpvResolver.h"
 
 using namespace Phantom::Gltf;
 

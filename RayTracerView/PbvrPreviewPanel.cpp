@@ -3,7 +3,7 @@
 #include "../PhotonSplatGpu/DepthPhotonTransport.h"
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
-#include "../../CGLib/VulkanGraphics/VulkanSPVResolver.h"
+#include "../../CGLib/VulkanGraphics/SpvResolver.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 #include "../../CGLib/Graphics/ImageFileWriter.h"
 #include <fstream>
