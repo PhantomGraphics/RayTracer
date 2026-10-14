@@ -25,3 +25,4 @@
 /RayTracerConsole/x64
 /RayTracerView/scenarios/screenshots
 /build_linux
+/RayTracerView/*_demo/
