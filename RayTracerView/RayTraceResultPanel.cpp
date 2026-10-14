@@ -5,7 +5,7 @@
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/VulkanImage.h"
-#include "../../CGLib/Graphics/ImageFileWriter.h"
+#include "../../CGLib/Graphics/Graphics/ImageFileWriter.h"
 
 #include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"

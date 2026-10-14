@@ -2,7 +2,7 @@
 #include "CommandDispatcher.h"
 #include "RayTracerApp.h"
 
-#include "../../CGLib/Graphics/ImageFileReader.h"
+#include "../../CGLib/Graphics/Graphics/ImageFileReader.h"
 
 #include <charconv>
 #include <algorithm>
