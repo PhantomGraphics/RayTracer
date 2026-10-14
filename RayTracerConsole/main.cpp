@@ -3,7 +3,7 @@
 #include "GltfToRt.h"
 
 #include "../../CGLib/Graphics/ImageFileWriter.h"
-#include "GLTFFileReader.h"
+#include "GltfFileReader.h"
 
 #include <algorithm>
 #include <charconv>
@@ -171,7 +171,7 @@ int runGltf(const std::filesystem::path& modelPath, int argc, char** argv, int o
     }
 
     // Load glTF / GLB
-    Phantom::File::GLTFFileReader reader;
+    Phantom::File::GltfFileReader reader;
     if (!reader.read(modelPath)) {
         std::cerr << "Failed to load: " << modelPath << "\n";
         return 1;

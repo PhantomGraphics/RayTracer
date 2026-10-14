@@ -10,8 +10,8 @@
 #include "../RayTracer/PathTracer.h"
 #include "MenuPanel.h"
 #include "RayTraceResultPanel.h"
-#include "PbvrPreviewPanel.h"
-#include "GltfPbvrPreview.h"
+#include "PBVRPreviewPanel.h"
+#include "GltfPBVRPreview.h"
 #include "CommandDispatcher.h"
 
 #include <filesystem>
@@ -71,8 +71,8 @@ private:
     Phantom::Gltf::GltfSceneRenderer renderer_;
     MenuPanel   menuPanel_;
     RayTraceResultPanel  resultPanel_;
-    PbvrPreviewPanel pbvrPanel_;
-    GltfPbvrPreview gltfPbvr_;
+    PBVRPreviewPanel pbvrPanel_;
+    GltfPBVRPreview gltfPbvr_;
     bool pbvrDemoPending_=false;
     int pbvrWaitSamples_=-1;
     bool pbvrWaitGltf_=false;

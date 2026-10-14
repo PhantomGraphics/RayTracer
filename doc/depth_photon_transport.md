@@ -35,7 +35,7 @@ settings.firstResolution = 32;
 settings.minResolution = 8;
 settings.resolutionDropEvery = 1; // 32 -> 16 -> 8 -> 8
 settings.selection.maxParticles = 64;
-settings.selection.selection = PbvrSelection::Power;
+settings.selection.selection = PBVRSelection::Power;
 
 DepthPhotonTransport transport;
 PhotonMap photons;

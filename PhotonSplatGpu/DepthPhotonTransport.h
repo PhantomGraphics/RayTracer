@@ -18,8 +18,8 @@ struct DepthPhotonSettings {
     bool storeDirectPhotons = false;
     bool buildPhotonIndex = false;
     std::uint32_t randomSeed = 42;
-    PbvrPhotonSettings selection = [] {
-        PbvrPhotonSettings s; s.selection=PbvrSelection::Power;
+    PBVRPhotonSettings selection = [] {
+        PBVRPhotonSettings s; s.selection=PBVRSelection::Power;
         s.retention=0.5; s.maxParticles=64; return s;
     }();
 };

@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "../RayTracer/PhotonMapper.h"
-#include "../RayTracer/PbvrResampler.h"
+#include "../RayTracer/PBVRResampler.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -318,12 +318,12 @@ TEST(PhotonMapperTest, GpuStorageOptionsKeepIndirectTransportAndShading)
     ASSERT_TRUE(original.shadeGBuffer(gbuffer,indexed)); ASSERT_TRUE(gpuOnly.shadeGBuffer(gbuffer,scan));
     EXPECT_EQ(indexed.getValues(),scan.getValues());
 }
-TEST(PbvrResamplerTest, PowerCompensationPreservesGrayFluxAndStratifiesDraws)
+TEST(PBVRResamplerTest, PowerCompensationPreservesGrayFluxAndStratifiesDraws)
 {
-    std::vector<PbvrArrival> arrivals;
+    std::vector<PBVRArrival> arrivals;
     for(int i=0;i<100;++i) arrivals.push_back({V(i,0,0),V(1),0});
-    PbvrPhotonSettings cfg; cfg.selection=PbvrSelection::Power; cfg.retention=0.5; cfg.uniformMix=0;
-    std::vector<PbvrSelectedSample> samples; PbvrResampleStats stats; std::string error;
+    PBVRPhotonSettings cfg; cfg.selection=PBVRSelection::Power; cfg.retention=0.5; cfg.uniformMix=0;
+    std::vector<PBVRSelectedSample> samples; PBVRResampleStats stats; std::string error;
     ASSERT_TRUE(resamplePbvr(arrivals,cfg,42,samples,stats,error))<<error;
     ASSERT_EQ(samples.size(),50u); V total(0); std::vector<bool> pairs(50,false);
     std::vector<std::uint64_t> keys;
@@ -339,30 +339,30 @@ TEST(PbvrResamplerTest, PowerCompensationPreservesGrayFluxAndStratifiesDraws)
     for(const auto& s:samples) total+=arrivals[s.source].power*s.powerScale;
     for(int c=0;c<3;++c) EXPECT_NEAR(total[c],199,1e-10);
 }
-TEST(PbvrResamplerTest, SpatialCoverageAndProbabilityCorrectionPreserveColoredFlux)
+TEST(PBVRResamplerTest, SpatialCoverageAndProbabilityCorrectionPreserveColoredFlux)
 {
-    std::vector<PbvrArrival> arrivals;
+    std::vector<PBVRArrival> arrivals;
     // Different cells / surfaces: each group has a different gray-scaled color.
     for(int i=0;i<20;++i) arrivals.push_back({V(0.1,0.1,0.1),V(1,0.1,0.05)*(i+1.0),0});
     for(int i=0;i<5;++i) arrivals.push_back({V(1.1,0.1,0.1),V(0.1,1,0.05)*(i+1.0),0});
     arrivals.push_back({V(0.1,0.1,0.1),V(0.1,0.05,1),1}); // Same position, different surface.
     V expected(0); for(const auto& a:arrivals) expected+=a.power;
-    PbvrPhotonSettings cfg; cfg.selection=PbvrSelection::SpatialPower; cfg.spatialCellSize=1;
+    PBVRPhotonSettings cfg; cfg.selection=PBVRSelection::SpatialPower; cfg.spatialCellSize=1;
     cfg.retention=0.5; cfg.maxParticles=7; cfg.uniformMix=0;
-    std::vector<PbvrSelectedSample> samples; PbvrResampleStats stats; std::string error;
+    std::vector<PBVRSelectedSample> samples; PBVRResampleStats stats; std::string error;
     ASSERT_TRUE(resamplePbvr(arrivals,cfg,42,samples,stats,error))<<error;
     EXPECT_EQ(samples.size(),7u); EXPECT_EQ(stats.strata,3u); EXPECT_EQ(stats.sampledStrata,3u);
     V actual(0); for(const auto& s:samples) actual+=arrivals[s.source].power*s.powerScale;
     for(int c=0;c<3;++c) EXPECT_NEAR(actual[c],expected[c],1e-10);
 }
-TEST(PbvrResamplerTest, BudgetBelowStrataCountIsUnbiasedAndNeverRelocatesPoints)
+TEST(PBVRResamplerTest, BudgetBelowStrataCountIsUnbiasedAndNeverRelocatesPoints)
 {
-    std::vector<PbvrArrival> arrivals; V expected(0);
+    std::vector<PBVRArrival> arrivals; V expected(0);
     for(int i=0;i<12;++i) { const V power(i+1,13-i,0.5+i%3); arrivals.push_back({V(i+0.1,0,0),power,0}); expected+=power; }
-    PbvrPhotonSettings cfg; cfg.selection=PbvrSelection::SpatialPower; cfg.spatialCellSize=1;
+    PBVRPhotonSettings cfg; cfg.selection=PBVRSelection::SpatialPower; cfg.spatialCellSize=1;
     cfg.retention=1; cfg.maxParticles=3; cfg.uniformMix=0.1;
     constexpr int repeats=1024; V sum(0),squares(0);
-    std::vector<PbvrSelectedSample> samples; PbvrResampleStats stats; std::string error;
+    std::vector<PBVRSelectedSample> samples; PBVRResampleStats stats; std::string error;
     for(int e=0;e<repeats;++e) {
         ASSERT_TRUE(resamplePbvr(arrivals,cfg,static_cast<std::uint32_t>(e),samples,stats,error));
         EXPECT_EQ(samples.size(),3u); EXPECT_EQ(stats.strata,12u); EXPECT_LE(stats.sampledStrata,3u);
@@ -374,11 +374,11 @@ TEST(PbvrResamplerTest, BudgetBelowStrataCountIsUnbiasedAndNeverRelocatesPoints)
         EXPECT_LT(se,expected[c]*0.03); EXPECT_NEAR(mean,expected[c],5*se+1e-10);
     }
 }
-TEST(PbvrResamplerTest, IdentityEmptyReproducibilityAndInvalidInputs)
+TEST(PBVRResamplerTest, IdentityEmptyReproducibilityAndInvalidInputs)
 {
-    std::vector<PbvrArrival> arrivals{{V(0),V(1),0},{V(1),V(2),0}};
-    PbvrPhotonSettings cfg; cfg.selection=PbvrSelection::Power; cfg.retention=1;
-    std::vector<PbvrSelectedSample> a,b; PbvrResampleStats stats; std::string error;
+    std::vector<PBVRArrival> arrivals{{V(0),V(1),0},{V(1),V(2),0}};
+    PBVRPhotonSettings cfg; cfg.selection=PBVRSelection::Power; cfg.retention=1;
+    std::vector<PBVRSelectedSample> a,b; PBVRResampleStats stats; std::string error;
     ASSERT_TRUE(resamplePbvr(arrivals,cfg,42,a,stats,error)); EXPECT_EQ(a.size(),2u);
     for(std::size_t i=0;i<2;++i) { EXPECT_EQ(a[i].source,i); EXPECT_EQ(a[i].powerScale,1); EXPECT_FALSE(a[i].resampled); }
     cfg.retention=0.5;
@@ -386,26 +386,26 @@ TEST(PbvrResamplerTest, IdentityEmptyReproducibilityAndInvalidInputs)
     EXPECT_EQ(a[0].source,b[0].source); EXPECT_EQ(a[0].powerScale,b[0].powerScale); EXPECT_EQ(a[0].randomKey,b[0].randomKey);
     ASSERT_TRUE(resamplePbvr({},cfg,42,a,stats,error)); EXPECT_TRUE(a.empty());
     cfg.uniformMix=1.1; EXPECT_FALSE(resamplePbvr(arrivals,cfg,42,a,stats,error)); EXPECT_TRUE(a.empty());
-    cfg.uniformMix=0.05; cfg.selection=PbvrSelection::SpatialPower; cfg.spatialCellSize=0;
+    cfg.uniformMix=0.05; cfg.selection=PBVRSelection::SpatialPower; cfg.spatialCellSize=0;
     EXPECT_FALSE(resamplePbvr(arrivals,cfg,42,a,stats,error));
     cfg.spatialCellSize=1e-30; EXPECT_FALSE(resamplePbvr(arrivals,cfg,42,a,stats,error));
     cfg.spatialCellSize=1; arrivals[0].power.x=-1;
     EXPECT_FALSE(resamplePbvr(arrivals,cfg,42,a,stats,error)); EXPECT_EQ(stats.strata,0u);
 }
-TEST(PbvrResamplerTest, ColoredImportanceWeightsAreUnbiasedWithinCoveredStrata)
+TEST(PBVRResamplerTest, ColoredImportanceWeightsAreUnbiasedWithinCoveredStrata)
 {
-    std::vector<PbvrArrival> arrivals; V expected(0);
+    std::vector<PBVRArrival> arrivals; V expected(0);
     for(int i=0;i<24;++i) {
         const V power(0.1+i%5,0.2+(i*3)%7,0.05+(i*5)%3);
         arrivals.push_back({V(i%3+0.1,0,0),power,0}); expected+=power;
     }
-    PbvrPhotonSettings cfg; cfg.retention=0.5; cfg.maxParticles=5; cfg.uniformMix=0.05; cfg.spatialCellSize=1;
-    std::vector<PbvrSelectedSample> samples; PbvrResampleStats stats; std::string error;
-    for(auto mode:{PbvrSelection::Power,PbvrSelection::SpatialPower}) {
+    PBVRPhotonSettings cfg; cfg.retention=0.5; cfg.maxParticles=5; cfg.uniformMix=0.05; cfg.spatialCellSize=1;
+    std::vector<PBVRSelectedSample> samples; PBVRResampleStats stats; std::string error;
+    for(auto mode:{PBVRSelection::Power,PBVRSelection::SpatialPower}) {
         cfg.selection=mode; V sum(0),squares(0); constexpr int repeats=1024;
         for(int e=0;e<repeats;++e) {
             ASSERT_TRUE(resamplePbvr(arrivals,cfg,static_cast<std::uint32_t>(e),samples,stats,error));
-            if(mode==PbvrSelection::SpatialPower) EXPECT_EQ(stats.sampledStrata,3u);
+            if(mode==PBVRSelection::SpatialPower) EXPECT_EQ(stats.sampledStrata,3u);
             V value(0); for(const auto& sample:samples) value+=arrivals[sample.source].power*sample.powerScale;
             sum+=value; squares+=value*value;
         }
@@ -419,7 +419,7 @@ TEST(PhotonMapperTest, ImportanceTransportIsReproducibleAndPreservesMirrorPaths)
 {
     auto scene=enclosure(); for(int i=4;i<6;++i) { scene[i].metallic=1; scene[i].roughness=0; }
     auto cfg=settings(); cfg.transport=PhotonTransport::Pbvr; cfg.pbvr.maxParticles=500;
-    for(auto mode:{PbvrSelection::Power,PbvrSelection::SpatialPower}) {
+    for(auto mode:{PBVRSelection::Power,PBVRSelection::SpatialPower}) {
         cfg.pbvr.selection=mode; cfg.pbvr.spatialCellSize=0.35;
         PhotonMapper a(cfg),b(cfg); ASSERT_TRUE(a.build(scene))<<a.getLastError(); ASSERT_TRUE(b.build(scene));
         EXPECT_GT(a.getStats().causticPhotons,0u);

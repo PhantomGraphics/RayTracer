@@ -7,10 +7,10 @@
 
 // Screen-space linear lighting for the native glTF viewport. Binding 8 is the
 // renderer's existing application scalar field; only our fragment shader reads it.
-class GltfPbvrPreview {
+class GltfPBVRPreview {
 public:
-    GltfPbvrPreview();
-    ~GltfPbvrPreview();
+    GltfPBVRPreview();
+    ~GltfPBVRPreview();
     void setScene(const Phantom::Gltf::GltfDocument& document);
     void update(Phantom::Gltf::GltfSceneRenderer& renderer);
     void drawControls();

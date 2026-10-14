@@ -1,5 +1,5 @@
 #include "PhotonMapper.h"
-#include "PbvrResampler.h"
+#include "PBVRResampler.h"
 #include "../../CGLib/Space/Space/KDTree.h"
 #include "../../CGLib/Space/Space/BVH.h"
 #include <algorithm>
@@ -221,7 +221,7 @@ struct PhotonMapper::Impl {
                 p.power*=t.reflectance; // Material absorption is separate from thinning.
                 if(maximum(p.power)<=0) continue;
                 ++step.continuationCandidates;
-                if(settings.pbvr.selection==PbvrSelection::Uniform) {
+                if(settings.pbvr.selection==PBVRSelection::Uniform) {
                     if(settings.pbvr.retention<1 && selection.next()>=settings.pbvr.retention) continue;
                     p.power/=settings.pbvr.retention;
                 }
@@ -229,12 +229,12 @@ struct PhotonMapper::Impl {
                 p.origin=h.position; p.surface=h.index; arrivals.push_back(p);
             }
             const std::size_t cap=settings.pbvr.maxParticles;
-            if(settings.pbvr.selection!=PbvrSelection::Uniform && !arrivals.empty()) {
-                std::vector<PbvrArrival> candidates; candidates.reserve(arrivals.size());
+            if(settings.pbvr.selection!=PBVRSelection::Uniform && !arrivals.empty()) {
+                std::vector<PBVRArrival> candidates; candidates.reserve(arrivals.size());
                 for(const auto& p:arrivals) candidates.push_back({p.origin,p.power,p.surface});
                 auto options=settings.pbvr;
                 if(options.spatialCellSize==0) options.spatialCellSize=settings.gatherRadius;
-                std::vector<PbvrSelectedSample> samples; PbvrResampleStats selectionStats;
+                std::vector<PBVRSelectedSample> samples; PBVRResampleStats selectionStats;
                 const auto seed=settings.pbvr.randomSeed^static_cast<std::uint32_t>(bounce)*0x9e3779b9u;
                 if(!resamplePbvr(candidates,options,seed,samples,selectionStats,error)) return false;
                 std::vector<Particle> selected; selected.reserve(samples.size());
@@ -247,7 +247,7 @@ struct PhotonMapper::Impl {
                 arrivals.swap(selected); step.spatialStrata=selectionStats.strata;
                 step.sampledStrata=selectionStats.sampledStrata;
             }
-            const double capWeight=settings.pbvr.selection==PbvrSelection::Uniform && cap && arrivals.size()>cap?
+            const double capWeight=settings.pbvr.selection==PBVRSelection::Uniform && cap && arrivals.size()>cap?
                 static_cast<double>(arrivals.size())/cap:1;
             if(capWeight>1) {
                 // Uniform fixed-size sample, not the first K arrivals (which would bias geometry).
@@ -301,8 +301,8 @@ bool PhotonMapper::buildImpl(const std::vector<RtTriangle>& input,const std::vec
         return s.fail("Invalid photon transport mode");
     if(cfg.transport==PhotonTransport::Pbvr && (!std::isfinite(cfg.pbvr.retention)
         || cfg.pbvr.retention<=0 || cfg.pbvr.retention>1)) return s.fail("PBVR retention must be in (0, 1]");
-    if(cfg.transport==PhotonTransport::Pbvr && ((cfg.pbvr.selection!=PbvrSelection::Uniform
-        && cfg.pbvr.selection!=PbvrSelection::Power && cfg.pbvr.selection!=PbvrSelection::SpatialPower)
+    if(cfg.transport==PhotonTransport::Pbvr && ((cfg.pbvr.selection!=PBVRSelection::Uniform
+        && cfg.pbvr.selection!=PBVRSelection::Power && cfg.pbvr.selection!=PBVRSelection::SpatialPower)
         || !std::isfinite(cfg.pbvr.uniformMix) || cfg.pbvr.uniformMix<0 || cfg.pbvr.uniformMix>1
         || !std::isfinite(cfg.pbvr.spatialCellSize) || cfg.pbvr.spatialCellSize<0)) return s.fail("Invalid PBVR selection settings");
     if(input.empty() || input.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())) return s.fail("Invalid triangle count");

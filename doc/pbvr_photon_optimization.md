@@ -5,7 +5,7 @@
 ```cpp
 settings.buildPhotonIndex = false; // GPU集約ではKDTreeを構築しない
 settings.storeDirectPhotons = false; // 明示的な直接照明を使う場合
-settings.pbvr.selection = PbvrSelection::SpatialPower;
+settings.pbvr.selection = PBVRSelection::SpatialPower;
 settings.pbvr.uniformMix = 0.05;
 settings.pbvr.spatialCellSize = 0.12; // 0ならgatherRadius
 ```

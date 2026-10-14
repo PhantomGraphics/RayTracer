@@ -73,7 +73,7 @@ phantom_add_space_core()
 add_library(RayTracerCore STATIC
     ${RAYTRACER_ROOT}/RayTracer/PathTracer.cpp
     ${RAYTRACER_ROOT}/RayTracer/PhotonMapper.cpp
-    ${RAYTRACER_ROOT}/RayTracer/PbvrResampler.cpp
+    ${RAYTRACER_ROOT}/RayTracer/PBVRResampler.cpp
 )
 target_include_directories(RayTracerCore PRIVATE ${REPO_ROOT})
 target_link_libraries(RayTracerCore PUBLIC MathCore GraphicsCore SpaceCore)
@@ -162,8 +162,8 @@ add_executable(RayTracerView
     ${RAYTRACER_ROOT}/RayTracerView/RayTracerApp.cpp
     ${RAYTRACER_ROOT}/RayTracerView/MenuPanel.cpp
     ${RAYTRACER_ROOT}/RayTracerView/RayTraceResultPanel.cpp
-    ${RAYTRACER_ROOT}/RayTracerView/PbvrPreviewPanel.cpp
-    ${RAYTRACER_ROOT}/RayTracerView/GltfPbvrPreview.cpp
+    ${RAYTRACER_ROOT}/RayTracerView/PBVRPreviewPanel.cpp
+    ${RAYTRACER_ROOT}/RayTracerView/GltfPBVRPreview.cpp
     ${RAYTRACER_ROOT}/RayTracerView/GltfSceneBuilder.cpp
     ${RAYTRACER_ROOT}/RayTracerView/CommandDispatcher.cpp
 )

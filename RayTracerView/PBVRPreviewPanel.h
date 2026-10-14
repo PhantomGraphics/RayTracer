@@ -9,10 +9,10 @@
 
 // Built-in Cornell experiment. Worker owns a separate Vulkan device/queue;
 // the viewer never shares its command pool with the offscreen transport.
-class PbvrPreviewPanel {
+class PBVRPreviewPanel {
 public:
-    PbvrPreviewPanel();
-    ~PbvrPreviewPanel();
+    PBVRPreviewPanel();
+    ~PBVRPreviewPanel();
     void init(Phantom::VKG::VulkanContext& context,const Phantom::VKG::VulkanCommandPool& pool,ViewShell& shell);
     void update();
     void onImGui();

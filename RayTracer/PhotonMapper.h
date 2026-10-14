@@ -7,13 +7,13 @@ namespace Phantom::RayTracer {
 
 enum class PhotonContribution { All, Direct, Indirect, Caustic };
 enum class PhotonTransport { Path, Pbvr }; // Per-path roulette / staged particle transport.
-enum class PbvrSelection { Uniform, Power, SpatialPower };
+enum class PBVRSelection { Uniform, Power, SpatialPower };
 
-struct PbvrPhotonSettings {
+struct PBVRPhotonSettings {
     double retention = 0.5; // Independent survival on each re-emission; (0, 1].
     std::size_t maxParticles = 0; // Cap after thinning; 0 means unlimited.
     std::uint32_t randomSeed = 42; // Thinning only; emission uses render.randomSeed.
-    PbvrSelection selection = PbvrSelection::Uniform;
+    PBVRSelection selection = PBVRSelection::Uniform;
     double uniformMix = 0.05; // Uniform probability floor in importance sampling.
     double spatialCellSize = 0.0; // SpatialPower: 0 uses gatherRadius.
 };
@@ -58,7 +58,7 @@ struct PhotonMappingSettings {
     int directLightSamples = 4;
     double rayEpsilon = 1.0e-5;
     PhotonTransport transport = PhotonTransport::Path;
-    PbvrPhotonSettings pbvr;
+    PBVRPhotonSettings pbvr;
     bool buildPhotonIndex = true; // Disable when using GPU gathering.
     bool storeDirectPhotons = true; // Optional: direct light is evaluated by NEE.
 };

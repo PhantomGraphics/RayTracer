@@ -11,7 +11,7 @@
 
 using Phantom::RayTracer::RtTexture;
 using Phantom::RayTracer::RtTriangle;
-using Phantom::File::GLTFFile;
+using Phantom::File::GltfFile;
 using Phantom::File::GLTFNode;
 using Phantom::File::GLTFPrimitive;
 using Phantom::File::GLTFPrimitiveMode;
@@ -64,7 +64,7 @@ glm::mat4 nodeLocalTransform(const GLTFNode& node)
 
 // Convert one GLTFPrimitive to RtTriangle entries and append to out.
 void emitTriangles(const GLTFPrimitive&        prim,
-                   const GLTFFile&             gltf,
+                   const GltfFile&             gltf,
                    const glm::mat4&            world,
                    std::vector<RtTriangle>&    out)
 {
@@ -135,7 +135,7 @@ void emitTriangles(const GLTFPrimitive&        prim,
 }
 
 // Recursively walk the node tree and accumulate triangles.
-void extractNode(const GLTFFile&          gltf,
+void extractNode(const GltfFile&          gltf,
                  int                      nodeIndex,
                  const glm::mat4&         parentWorld,
                  std::vector<RtTriangle>& out)
@@ -154,7 +154,7 @@ void extractNode(const GLTFFile&          gltf,
 
 } // namespace
 
-GltfConvertResult convertGltfToRt(const GLTFFile&              gltf,
+GltfConvertResult convertGltfToRt(const GltfFile&              gltf,
                                    const std::filesystem::path& basePath)
 {
     GltfConvertResult result;
