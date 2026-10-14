@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "GltfPbvrPreview.h"
+#include "GltfPBVRPreview.h"
 #include "../PhotonSplatGpu/DepthPhotonTransport.h"
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
@@ -8,7 +8,7 @@
 
 namespace RT=Phantom::RayTracer;
 using V=Phantom::Math::Vector3dd;
-struct GltfPbvrPreview::Runtime {
+struct GltfPBVRPreview::Runtime {
     Phantom::VKG::VulkanContext context;
     Phantom::VKG::VulkanCommandPool pool;
     RT::PhotonSplatGpu gpu;
@@ -24,18 +24,18 @@ struct GltfPbvrPreview::Runtime {
         return ready;
     }
 };
-GltfPbvrPreview::GltfPbvrPreview()=default;
-GltfPbvrPreview::~GltfPbvrPreview() { cleanup(); }
-void GltfPbvrPreview::cleanup() {
+GltfPBVRPreview::GltfPBVRPreview()=default;
+GltfPBVRPreview::~GltfPBVRPreview() { cleanup(); }
+void GltfPBVRPreview::cleanup() {
     if(future_.valid()) { future_.wait(); future_.get(); }
     runtime_.reset();
 }
-void GltfPbvrPreview::invalidate() {
+void GltfPBVRPreview::invalidate() {
     ++generation_; samples_=0; coarse_=true; dirty_=true;
     mean_.clear(); direct_.clear(); positions_.clear(); normals_.clear();
     changed_=std::chrono::steady_clock::now();
 }
-void GltfPbvrPreview::setScene(const Phantom::Gltf::GltfDocument& document) {
+void GltfPBVRPreview::setScene(const Phantom::Gltf::GltfDocument& document) {
     invalidate(); haveCamera_=false; scene_.reset();
     auto built=std::make_shared<GltfBuildResult>(buildFromGltf(document));
     if(built->triangles.empty()) { status_="No glTF geometry"; return; }
@@ -71,7 +71,7 @@ void GltfPbvrPreview::setScene(const Phantom::Gltf::GltfDocument& document) {
     radius_=std::max(1e-5,glm::length(hi-lo)*0.035);
     scene_=std::move(built); status_="PBVR ready";
 }
-void GltfPbvrPreview::launch() {
+void GltfPBVRPreview::launch() {
     const auto scene=scene_; const auto generation=generation_; const bool coarse=coarse_;
     const int sample=samples_,width=width_,height=height_; const double radius=radius_;
     RT::RtCameraSpec camera;
@@ -118,7 +118,7 @@ void GltfPbvrPreview::launch() {
         result.seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count(); return result;
     });
 }
-void GltfPbvrPreview::update(Phantom::Gltf::GltfSceneRenderer& renderer) {
+void GltfPBVRPreview::update(Phantom::Gltf::GltfSceneRenderer& renderer) {
     const auto camera=renderer.getCameraParams(); const auto extent=renderer.getExtent();
     if(!haveCamera_ || camera.eye!=camera_.eye || camera.target!=camera_.target || camera.up!=camera_.up
         || camera.fovDeg!=camera_.fovDeg || extent.width!=extent_.width || extent.height!=extent_.height) {
@@ -158,7 +158,7 @@ void GltfPbvrPreview::update(Phantom::Gltf::GltfSceneRenderer& renderer) {
     }
     if(enabled_ && scene_ && !future_.valid() && (!coarse_ || samples_==0)) launch();
 }
-void GltfPbvrPreview::drawControls() {
+void GltfPBVRPreview::drawControls() {
     if(ImGui::Checkbox("PBVR glTF lighting",&enabled_)) invalidate();
     if(ImGui::SliderFloat("Indirect gain",&indirectGain_,0,2)) dirty_=true;
     ImGui::TextWrapped("%s",status_.c_str());

@@ -231,7 +231,7 @@ TEST_F(PhotonSplatGpuTest, DepthTransportRejectsUnsupportedInputs)
     cfg.firstResolution=0; EXPECT_FALSE(transport.build(gpu,scene,cfg,output));
     cfg.firstResolution=32; scene[0].metallic=1;
     EXPECT_FALSE(transport.build(gpu,scene,cfg,output));
-    scene[0].metallic=0; cfg.selection.selection=PbvrSelection::SpatialPower;
+    scene[0].metallic=0; cfg.selection.selection=PBVRSelection::SpatialPower;
     EXPECT_FALSE(transport.build(gpu,scene,cfg,output));
     cfg.selection.spatialCellSize=0.1; cfg.sourceOffset=std::numeric_limits<double>::quiet_NaN();
     EXPECT_FALSE(transport.build(gpu,scene,cfg,output));

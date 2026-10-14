@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "PbvrPreviewPanel.h"
+#include "PBVRPreviewPanel.h"
 #include "../PhotonSplatGpu/DepthPhotonTransport.h"
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
@@ -60,7 +60,7 @@ bool pfm(const std::filesystem::path& path,const std::vector<V>& values) {
     return file.good();
 }
 }
-struct PbvrPreviewPanel::Runtime {
+struct PBVRPreviewPanel::Runtime {
     Phantom::VKG::VulkanContext context;
     Phantom::VKG::VulkanCommandPool pool;
     RT::PhotonSplatGpu gpu;
@@ -76,40 +76,40 @@ struct PbvrPreviewPanel::Runtime {
         return ready;
     }
 };
-PbvrPreviewPanel::PbvrPreviewPanel()=default;
-PbvrPreviewPanel::~PbvrPreviewPanel() { if(future_.valid()) future_.wait(); }
-void PbvrPreviewPanel::init(Phantom::VKG::VulkanContext& context,const Phantom::VKG::VulkanCommandPool& pool,ViewShell& shell) {
+PBVRPreviewPanel::PBVRPreviewPanel()=default;
+PBVRPreviewPanel::~PBVRPreviewPanel() { if(future_.valid()) future_.wait(); }
+void PBVRPreviewPanel::init(Phantom::VKG::VulkanContext& context,const Phantom::VKG::VulkanCommandPool& pool,ViewShell& shell) {
     shell_=&shell; image_.init(&context,&pool);
     shaderDirectory_=(Phantom::VKG::detail::detectModuleDir()/"photon_splat_shaders").string();
 }
-void PbvrPreviewPanel::cleanup(VkDevice device) {
+void PBVRPreviewPanel::cleanup(VkDevice device) {
     enabled_=false; if(future_.valid()) { future_.wait(); future_.get(); }
     runtime_.reset(); image_.cleanup(device);
 }
-void PbvrPreviewPanel::reset() {
+void PBVRPreviewPanel::reset() {
     ++generation_; sampleCount_=referenceCount_=0; coarse_=true; reference_=false;
     mean_.clear(); m2_.clear(); referenceSum_.clear(); standardError_=-1; error_.clear();
     lastChange_=std::chrono::steady_clock::now();
 }
-void PbvrPreviewPanel::start() {
+void PBVRPreviewPanel::start() {
     enabled_=true; reset(); startTime_=lastUpdate_=std::chrono::steady_clock::now();
     if(shell_) shell_->setPanelVisible("PBVR Progressive Preview",true);
 }
-bool PbvrPreviewPanel::startDemo(const std::filesystem::path& directory) {
+bool PBVRPreviewPanel::startDemo(const std::filesystem::path& directory) {
     if(demo_ || directory.empty()) return false;
     std::error_code ec; std::filesystem::create_directories(directory,ec); if(ec) return false;
     demoDirectory_=directory; demoResponse_.reset(); metrics_.clear(); frameSeconds_.clear();
     firstImageSeconds_=refine32Seconds_=-1;
     yaw_=pitch_=0; distance_=4.2f; maxSamples_=32; demo_=true; start(); return true;
 }
-bool PbvrPreviewPanel::setYaw(float degrees) {
+bool PBVRPreviewPanel::setYaw(float degrees) {
     if(demo_ || !std::isfinite(degrees) || std::abs(degrees)>75) return false;
     yaw_=degrees; start(); return true;
 }
-std::optional<std::string> PbvrPreviewPanel::takeDemoResponse() {
+std::optional<std::string> PBVRPreviewPanel::takeDemoResponse() {
     auto response=std::move(demoResponse_); demoResponse_.reset(); return response;
 }
-void PbvrPreviewPanel::launch() {
+void PBVRPreviewPanel::launch() {
     const auto generation=generation_; const bool coarse=coarse_,reference=reference_;
     const int sample=reference?referenceCount_:sampleCount_;
     RT::RtCameraSpec camera; const double yaw=yaw_*pi/180,pitch=pitch_*pi/180;
@@ -151,11 +151,11 @@ void PbvrPreviewPanel::launch() {
         return result;
     });
 }
-void PbvrPreviewPanel::present() { image_.present(display(mean_,direct_)); }
-bool PbvrPreviewPanel::saveCheckpoint(const std::string& name) {
+void PBVRPreviewPanel::present() { image_.present(display(mean_,direct_)); }
+bool PBVRPreviewPanel::saveCheckpoint(const std::string& name) {
     return image_.saveResult((demoDirectory_/(name+".png")).string())&&pfm(demoDirectory_/(name+"_indirect.pfm"),mean_);
 }
-void PbvrPreviewPanel::update() {
+void PBVRPreviewPanel::update() {
     const auto now=std::chrono::steady_clock::now();
     if(demo_ && lastUpdate_.time_since_epoch().count()) frameSeconds_.push_back(std::chrono::duration<double>(now-lastUpdate_).count());
     lastUpdate_=now;
@@ -203,7 +203,7 @@ void PbvrPreviewPanel::update() {
     }
     if(!future_.valid() && ((coarse_ && sampleCount_==0) || (!coarse_ && (maxSamples_==0 || sampleCount_<maxSamples_)) || (demo_ && reference_))) launch();
 }
-void PbvrPreviewPanel::finishDemo() {
+void PBVRPreviewPanel::finishDemo() {
     for(auto& value:referenceSum_) value/=static_cast<double>(referenceCount_);
     Phantom::Graphics::ImageFileWriter writer;
     bool ok=writer.write((demoDirectory_/"reference.png").string(),display(referenceSum_,direct_))&&pfm(demoDirectory_/"reference_indirect.pfm",referenceSum_);
@@ -218,7 +218,7 @@ void PbvrPreviewPanel::finishDemo() {
     demoResponse_=ok?"OK:PBVR samples=32 reference=32":"Error:PBVR report write failed";
     if(!ok) error_="PBVR report write failed";
 }
-void PbvrPreviewPanel::onImGui() {
+void PBVRPreviewPanel::onImGui() {
     if(!shell_ || !shell_->beginPanel("PBVR Progressive Preview")) return;
     ImGui::TextUnformatted("Cornell box / paraboloid photon transport");
     ImGui::BeginDisabled(demo_ || locked_);

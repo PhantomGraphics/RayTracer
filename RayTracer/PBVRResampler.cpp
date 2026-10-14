@@ -1,4 +1,4 @@
-#include "PbvrResampler.h"
+#include "PBVRResampler.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -55,15 +55,15 @@ std::size_t pick(const std::vector<double>& cdf,double u,std::size_t& cursor) {
     return cursor;
 }
 }
-bool resamplePbvr(const std::vector<PbvrArrival>& input,const PbvrPhotonSettings& cfg,
-    std::uint32_t seed,std::vector<PbvrSelectedSample>& selected,PbvrResampleStats& stats,std::string& error)
+bool resamplePbvr(const std::vector<PBVRArrival>& input,const PBVRPhotonSettings& cfg,
+    std::uint32_t seed,std::vector<PBVRSelectedSample>& selected,PBVRResampleStats& stats,std::string& error)
 {
     selected.clear(); stats={}; error.clear();
     const auto fail=[&](const char* message) { selected.clear(); stats={}; error=message; return false; };
-    if((cfg.selection!=PbvrSelection::Power && cfg.selection!=PbvrSelection::SpatialPower)
+    if((cfg.selection!=PBVRSelection::Power && cfg.selection!=PBVRSelection::SpatialPower)
         || !std::isfinite(cfg.retention) || cfg.retention<=0 || cfg.retention>1
         || !std::isfinite(cfg.uniformMix) || cfg.uniformMix<0 || cfg.uniformMix>1
-        || (cfg.selection==PbvrSelection::SpatialPower && (!std::isfinite(cfg.spatialCellSize) || cfg.spatialCellSize<=0)))
+        || (cfg.selection==PBVRSelection::SpatialPower && (!std::isfinite(cfg.spatialCellSize) || cfg.spatialCellSize<=0)))
         return fail("Invalid PBVR resampling settings");
     if(input.empty()) return true;
     if(input.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())) return fail("Too many PBVR arrivals");
@@ -76,7 +76,7 @@ bool resamplePbvr(const std::vector<PbvrArrival>& input,const PbvrPhotonSettings
     }
     const auto target=static_cast<std::size_t>(std::ceil(input.size()*cfg.retention));
     const std::size_t count=cfg.maxParticles?std::min(target,cfg.maxParticles):target;
-    std::vector<PbvrSelectedSample> result; result.reserve(count);
+    std::vector<PBVRSelectedSample> result; result.reserve(count);
     if(count==input.size()) {
         for(std::size_t i=0;i<input.size();++i) result.push_back({i,1,0,false});
         selected=std::move(result); return true;
@@ -84,7 +84,7 @@ bool resamplePbvr(const std::vector<PbvrArrival>& input,const PbvrPhotonSettings
     std::vector<double> weights; weights.reserve(input.size());
     for(const auto& p:input) weights.push_back(glm::dot(p.power/scale,V(0.2126,0.7152,0.0722)));
     std::vector<Group> groups;
-    if(cfg.selection==PbvrSelection::Power) {
+    if(cfg.selection==PBVRSelection::Power) {
         groups.resize(1); groups[0].members.reserve(input.size());
         for(std::size_t i=0;i<input.size();++i) { groups[0].members.push_back(i); groups[0].weight+=weights[i]; }
     } else {

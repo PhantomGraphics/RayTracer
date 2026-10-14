@@ -1,5 +1,5 @@
 #include "DepthPhotonTransport.h"
-#include "../RayTracer/PbvrResampler.h"
+#include "../RayTracer/PBVRResampler.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -60,9 +60,9 @@ bool DepthPhotonTransport::build(PhotonSplatGpu& gpu,const std::vector<RtTriangl
         || !std::isfinite(cfg.selection.retention) || cfg.selection.retention<=0 || cfg.selection.retention>1
         || !std::isfinite(cfg.selection.uniformMix) || cfg.selection.uniformMix<0 || cfg.selection.uniformMix>1
         || !std::isfinite(cfg.selection.spatialCellSize) || cfg.selection.spatialCellSize<0
-        || (cfg.selection.selection!=PbvrSelection::Uniform && cfg.selection.selection!=PbvrSelection::Power
-            && cfg.selection.selection!=PbvrSelection::SpatialPower)
-        || (cfg.selection.selection==PbvrSelection::SpatialPower && cfg.selection.spatialCellSize<=0))
+        || (cfg.selection.selection!=PBVRSelection::Uniform && cfg.selection.selection!=PBVRSelection::Power
+            && cfg.selection.selection!=PBVRSelection::SpatialPower)
+        || (cfg.selection.selection==PBVRSelection::SpatialPower && cfg.selection.spatialCellSize<=0))
         return fail("Invalid depth photon transport settings");
     std::vector<V> normals; std::vector<double> areas,weights;
     double total=0;
@@ -98,7 +98,7 @@ bool DepthPhotonTransport::build(PhotonSplatGpu& gpu,const std::vector<RtTriangl
         const int reductions=cfg.resolutionDropEvery?bounce/cfg.resolutionDropEvery:0;
         for(int r=0;r<reductions && step.resolution>cfg.minResolution;++r)
             step.resolution=std::max(cfg.minResolution,step.resolution/2);
-        std::vector<PbvrArrival> candidates;
+        std::vector<PBVRArrival> candidates;
         for(const auto& source:sources) {
             step.launchedFlux+=source.power;
             const bool paraboloid=cfg.projection==DepthPhotonProjection::Paraboloid;
@@ -142,8 +142,8 @@ bool DepthPhotonTransport::build(PhotonSplatGpu& gpu,const std::vector<RtTriangl
         if(!candidates.empty()) {
             auto selection=cfg.selection;
             // Uniform uses the same fixed-budget stratified machinery, with q=1/M.
-            if(selection.selection==PbvrSelection::Uniform) { selection.selection=PbvrSelection::Power; selection.uniformMix=1; }
-            std::vector<PbvrSelectedSample> selected; PbvrResampleStats selectionStats;
+            if(selection.selection==PBVRSelection::Uniform) { selection.selection=PBVRSelection::Power; selection.uniformMix=1; }
+            std::vector<PBVRSelectedSample> selected; PBVRResampleStats selectionStats;
             if(!resamplePbvr(candidates,selection,cfg.randomSeed^cfg.selection.randomSeed^
                 (static_cast<std::uint32_t>(bounce+1)*0x9e3779b9u),selected,selectionStats,error_)) return fail(error_);
             for(const auto& sample:selected) {

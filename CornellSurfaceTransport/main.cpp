@@ -312,7 +312,7 @@ int renderPhotonQuality(const Phantom::RayTracer::PhotonMappingSettings& setting
         <<','<<settings.pbvr.retention<<','<<settings.pbvr.maxParticles<<','<<rays<<','<<stored
         <<','<<transportSeconds<<','<<mapSeconds<<','<<buildSeconds<<','<<gatherSeconds<<','<<averageSeconds
         <<','<<shadeSeconds<<','<<totalSeconds-shadeSeconds<<','<<totalSeconds
-        <<','<<(settings.pbvr.selection==RT::PbvrSelection::Power?"power":(settings.pbvr.selection==RT::PbvrSelection::SpatialPower?"spatial":"uniform"))
+        <<','<<(settings.pbvr.selection==RT::PBVRSelection::Power?"power":(settings.pbvr.selection==RT::PBVRSelection::SpatialPower?"spatial":"uniform"))
         <<','<<settings.pbvr.spatialCellSize<<','<<settings.buildPhotonIndex<<','<<settings.storeDirectPhotons
         <<','<<settings.directLightSamples<<','<<settings.photonMaxDepth<<'\n';
     std::cout<<"Quality render: mode="<<(settings.transport==RT::PhotonTransport::Path?"path":"pbvr")
@@ -627,8 +627,8 @@ int runPhotonMapping(int argc,char** argv)
             cfg.buildPhotonIndex=false; cfg.storeDirectPhotons=false;
             if(argc==16) {
                 const std::string selection=argv[12];
-                if(selection=="power") cfg.pbvr.selection=Phantom::RayTracer::PbvrSelection::Power;
-                else if(selection=="spatial") cfg.pbvr.selection=Phantom::RayTracer::PbvrSelection::SpatialPower;
+                if(selection=="power") cfg.pbvr.selection=Phantom::RayTracer::PBVRSelection::Power;
+                else if(selection=="spatial") cfg.pbvr.selection=Phantom::RayTracer::PBVRSelection::SpatialPower;
                 else if(selection!="uniform") return 1;
                 char* cellEnd=nullptr; cfg.pbvr.spatialCellSize=std::strtod(argv[13],&cellEnd);
                 const int index=integer(argv[14],1),direct=integer(argv[15],1);
