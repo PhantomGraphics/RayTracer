@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-class RayTracerApp : public ::VKG::VkAppBase, public ::IScenarioHost {
+class RayTracerApp : public ::Phantom::VKG::VkAppBase, public ::IScenarioHost {
 public:
     RayTracerApp(int width, int height, const std::string& title);
 

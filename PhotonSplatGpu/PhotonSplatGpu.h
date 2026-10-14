@@ -21,7 +21,7 @@ public:
     ~PhotonSplatGpu();
     PhotonSplatGpu(const PhotonSplatGpu&) = delete;
     PhotonSplatGpu& operator=(const PhotonSplatGpu&) = delete;
-    bool create(VKG::VulkanContext& context, const VKG::VulkanCommandPool& pool,
+    bool create(Phantom::VKG::VulkanContext& context, const Phantom::VKG::VulkanCommandPool& pool,
                 const std::string& shaderDirectory);
     void destroy();
     // Depth-tested rasterization only: no photon splatting or transport rays.
