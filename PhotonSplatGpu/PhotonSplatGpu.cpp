@@ -45,7 +45,7 @@ struct Buffer {
         mapped=nullptr; buffer=VK_NULL_HANDLE; memory=VK_NULL_HANDLE;
         capacity=0; bufferUsage=0;
     }
-    bool create(const VKG::VulkanContext& ctx,VkDeviceSize size,VkBufferUsageFlags usage,bool readback=false) {
+    bool create(const Phantom::VKG::VulkanContext& ctx,VkDeviceSize size,VkBufferUsageFlags usage,bool readback=false) {
         if(buffer && mapped && device==ctx.getDevice() && capacity>=size && bufferUsage==usage && cachedReadback==readback) return true;
         destroy(); device=ctx.getDevice();
         VkBufferCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; ci.size=size;
@@ -84,7 +84,7 @@ struct Target {
         framebuffer=VK_NULL_HANDLE; pass=VK_NULL_HANDLE; colorView=depthView=VK_NULL_HANDLE;
         color=depth=VK_NULL_HANDLE; colorMemory=depthMemory=VK_NULL_HANDLE;
     }
-    bool image(const VKG::VulkanContext& ctx,int w,int h,VkFormat format,VkImageUsageFlags usage,
+    bool image(const Phantom::VKG::VulkanContext& ctx,int w,int h,VkFormat format,VkImageUsageFlags usage,
                VkImageAspectFlags aspect,VkImage& image,VkDeviceMemory& memory,VkImageView& view) {
         VkImageCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO; ci.imageType=VK_IMAGE_TYPE_2D;
         ci.format=format; ci.extent={static_cast<uint32_t>(w),static_cast<uint32_t>(h),1};
@@ -101,7 +101,7 @@ struct Target {
         vi.viewType=VK_IMAGE_VIEW_TYPE_2D; vi.format=format; vi.subresourceRange={aspect,0,1,0,1};
         return vkCreateImageView(device,&vi,nullptr,&view)==VK_SUCCESS;
     }
-    bool create(const VKG::VulkanContext& ctx,int w,int h,bool geometry) {
+    bool create(const Phantom::VKG::VulkanContext& ctx,int w,int h,bool geometry) {
         destroy(); device=ctx.getDevice();
         if(!image(ctx,w,h,colorFormat,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_IMAGE_ASPECT_COLOR_BIT,color,colorMemory,colorView)) return false;
@@ -142,15 +142,15 @@ struct Target {
 };
 }
 struct PhotonSplatGpu::Impl {
-    VKG::VulkanContext* context=nullptr;
-    const VKG::VulkanCommandPool* pool=nullptr;
+    Phantom::VKG::VulkanContext* context=nullptr;
+    const Phantom::VKG::VulkanCommandPool* pool=nullptr;
     VkDescriptorSetLayout layout=VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool=VK_NULL_HANDLE;
     VkDescriptorSet descriptor=VK_NULL_HANDLE;
     VkSampler sampler=VK_NULL_HANDLE;
     VkQueryPool queries=VK_NULL_HANDLE;
-    VKG::VulkanPipeline geometryPipeline,splatPipeline;
-    VKG::PipelineConfig geometryConfig,splatConfig,paraboloidConfig;
+    Phantom::VKG::VulkanPipeline geometryPipeline,splatPipeline;
+    Phantom::VKG::PipelineConfig geometryConfig,splatConfig,paraboloidConfig;
     Target geometry,accumulation;
     Buffer cameraBuffer,trianglesBuffer,photonsBuffer,readback;
     int width=0,height=0;
@@ -179,7 +179,7 @@ void PhotonSplatGpu::destroy()
     s.layout=VK_NULL_HANDLE; s.descriptor=VK_NULL_HANDLE; s.context=nullptr; s.pool=nullptr;
     s.width=s.height=0; s.ready=false;
 }
-bool PhotonSplatGpu::create(VKG::VulkanContext& context,const VKG::VulkanCommandPool& pool,const std::string& directory)
+bool PhotonSplatGpu::create(Phantom::VKG::VulkanContext& context,const Phantom::VKG::VulkanCommandPool& pool,const std::string& directory)
 {
     destroy(); auto& s=*impl_; s.error.clear();
     if(!context.getDevice() || !pool.get()) return s.fail("Uninitialized Vulkan context or pool");
@@ -216,14 +216,14 @@ bool PhotonSplatGpu::create(VKG::VulkanContext& context,const VKG::VulkanCommand
         if(vkCreateQueryPool(device,&qi,nullptr,&s.queries)!=VK_SUCCESS) return s.fail("Timestamp creation failed");
     }
     const auto dir=std::filesystem::path(directory);
-    s.geometryConfig={}; s.geometryConfig.vertSpv=VKG::loadSPV((dir/"gbuffer.vert.spv").string());
-    s.geometryConfig.fragSpv=VKG::loadSPV((dir/"gbuffer.frag.spv").string());
+    s.geometryConfig={}; s.geometryConfig.vertSpv=Phantom::VKG::loadSPV((dir/"gbuffer.vert.spv").string());
+    s.geometryConfig.fragSpv=Phantom::VKG::loadSPV((dir/"gbuffer.frag.spv").string());
     s.geometryConfig.descriptorSetLayout=s.layout; s.geometryConfig.cullMode=VK_CULL_MODE_NONE;
     s.paraboloidConfig=s.geometryConfig;
-    s.paraboloidConfig.vertSpv=VKG::loadSPV((dir/"paraboloid.vert.spv").string());
-    s.paraboloidConfig.fragSpv=VKG::loadSPV((dir/"paraboloid.frag.spv").string());
-    s.splatConfig={}; s.splatConfig.vertSpv=VKG::loadSPV((dir/"splat.vert.spv").string());
-    s.splatConfig.fragSpv=VKG::loadSPV((dir/"splat.frag.spv").string());
+    s.paraboloidConfig.vertSpv=Phantom::VKG::loadSPV((dir/"paraboloid.vert.spv").string());
+    s.paraboloidConfig.fragSpv=Phantom::VKG::loadSPV((dir/"paraboloid.frag.spv").string());
+    s.splatConfig={}; s.splatConfig.vertSpv=Phantom::VKG::loadSPV((dir/"splat.vert.spv").string());
+    s.splatConfig.fragSpv=Phantom::VKG::loadSPV((dir/"splat.frag.spv").string());
     s.splatConfig.descriptorSetLayout=s.layout; s.splatConfig.cullMode=VK_CULL_MODE_NONE;
     s.splatConfig.depthTest=s.splatConfig.depthWrite=false;
     s.splatConfig.blendEnable=s.splatConfig.additiveBlend=true;
@@ -358,7 +358,7 @@ bool PhotonSplatGpu::renderImpl(const std::vector<RtTriangle>& input,const Photo
     s.stats.uploadSeconds=elapsed(uploadStart); const auto submitStart=std::chrono::steady_clock::now();
     const VkCommandBuffer cmd=s.pool->beginSingleTimeCommands(); if(!cmd) return s.fail("Command allocation failed");
     if(s.queries) { vkCmdResetQueryPool(cmd,s.queries,0,4); vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,s.queries,0); }
-    const auto draw=[&](const Target& target,const VKG::VulkanPipeline& pipeline,bool geometry) {
+    const auto draw=[&](const Target& target,const Phantom::VKG::VulkanPipeline& pipeline,bool geometry) {
         VkClearValue clear[2]{}; clear[1].depthStencil={1,0};
         VkRenderPassBeginInfo begin{}; begin.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         begin.renderPass=target.pass; begin.framebuffer=target.framebuffer; begin.renderArea={{0,0},{static_cast<uint32_t>(width),static_cast<uint32_t>(height)}};

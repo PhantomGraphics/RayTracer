@@ -8,7 +8,7 @@
 using namespace Phantom::Gltf;
 
 RayTracerApp::RayTracerApp(int width, int height, const std::string& title)
-    : ::VKG::VkAppBase(width, height, title)
+    : ::Phantom::VKG::VkAppBase(width, height, title)
 {
     menuPanel_.init(
         &renderer_,
@@ -73,7 +73,7 @@ void RayTracerApp::onImGui()
         ImGui::EndMainMenuBar();
     }
     shell_.drawWindows();
-    ::VKG::VkAppBase::onImGui();
+    ::Phantom::VKG::VkAppBase::onImGui();
     pbvrPanel_.onImGui();
     scenarioBrowser_.pumpQueue();
     if (shell_.beginPanel("Scenario Browser")) {
@@ -85,7 +85,7 @@ void RayTracerApp::onImGui()
 void RayTracerApp::onInit()
 {
     applyShaders();
-    ::VKG::VkAppBase::onInit();
+    ::Phantom::VKG::VkAppBase::onInit();
     renderer_.setExtent(getExtent());
     resultPanel_.init(&getContext(), &getCommandPool());
     pbvrPanel_.init(getContext(),getCommandPool(),shell_);
@@ -95,10 +95,10 @@ void RayTracerApp::onInit()
 void RayTracerApp::applyShaders()
 {
     GltfSceneRenderer::Shaders s;
-    s.vertSpv       = ::VKG::loadSPVRepo("shaders/gltf.vert.spv");
-    s.fragSpv       = ::VKG::loadSPVRepo("raytracer_shaders/gltf_pbvr.frag.spv");
-    s.skyboxVertSpv = ::VKG::loadSPVRepo("shaders/skybox.vert.spv");
-    s.skyboxFragSpv = ::VKG::loadSPVRepo("shaders/skybox.frag.spv");
+    s.vertSpv       = ::Phantom::VKG::loadSPVRepo("shaders/gltf.vert.spv");
+    s.fragSpv       = ::Phantom::VKG::loadSPVRepo("raytracer_shaders/gltf_pbvr.frag.spv");
+    s.skyboxVertSpv = ::Phantom::VKG::loadSPVRepo("shaders/skybox.vert.spv");
+    s.skyboxFragSpv = ::Phantom::VKG::loadSPVRepo("shaders/skybox.frag.spv");
     renderer_.setShaders(std::move(s));
 }
 
@@ -181,7 +181,7 @@ void RayTracerApp::onUpdate(uint32_t frameIndex)
     }
 
     gltfPbvr_.update(renderer_);
-    ::VKG::VkAppBase::onUpdate(frameIndex);
+    ::Phantom::VKG::VkAppBase::onUpdate(frameIndex);
 }
 
 void RayTracerApp::onSwapChainCreated()
@@ -194,7 +194,7 @@ void RayTracerApp::onCleanup()
     gltfPbvr_.cleanup();
     pbvrPanel_.cleanup(getDevice());
     resultPanel_.cleanup(getDevice());
-    ::VKG::VkAppBase::onCleanup();
+    ::Phantom::VKG::VkAppBase::onCleanup();
 }
 bool RayTracerApp::runPbvrDemo(const std::filesystem::path& directory)
 {

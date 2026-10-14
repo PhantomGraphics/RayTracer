@@ -10,7 +10,7 @@
 class RayTracerApp; // fwd decl -- avoids a circular include with RayTracerApp.h
 class ViewShell;
 
-class MenuPanel : public ::VKG::IVkUIPanel {
+class MenuPanel : public ::Phantom::VKG::IVkUIPanel {
 public:
     void init(Phantom::Gltf::GltfSceneRenderer* renderer,
               std::function<void(const std::filesystem::path&)> onFileOpen,
