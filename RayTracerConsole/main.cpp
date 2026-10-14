@@ -2,7 +2,7 @@
 #include "PathTracer.h"
 #include "GltfToRt.h"
 
-#include "../../CGLib/Graphics/ImageFileWriter.h"
+#include "../../CGLib/Graphics/Graphics/ImageFileWriter.h"
 #include "GltfFileReader.h"
 
 #include <algorithm>
