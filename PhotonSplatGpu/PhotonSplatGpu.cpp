@@ -3,7 +3,7 @@
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/VulkanPipeline.h"
-#include "../../CGLib/VulkanGraphics/VulkanSPVLoader.h"
+#include "../../CGLib/VulkanGraphics/SpvLoader.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

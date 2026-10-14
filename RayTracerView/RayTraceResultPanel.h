@@ -15,7 +15,7 @@ namespace Phantom::VKG {
 
 class ViewShell;
 
-class RayTraceResultPanel : public ::Phantom::VKG::IVkUIPanel {
+class RayTraceResultPanel : public ::Phantom::VKG::IUIPanel {
 public:
     void init(const Phantom::VKG::VulkanContext* ctx, const Phantom::VKG::VulkanCommandPool* pool);
 
