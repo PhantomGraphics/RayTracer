@@ -44,12 +44,15 @@ struct RtTexture {
 // 683 lm/W luminous-efficacy constant Universe's Rendering/GltfRenderer.cpp uses, so a scene
 // lit by the same glTF file receives comparable light energy in both renderers).
 struct RtLight {
-    enum class Type { Directional, Point };
+    enum class Type { Directional, Point, Spot };
     Type   type         = Type::Directional;
-    double position[3]  = {0.0, 0.0, 0.0};   // Point only
-    double direction[3] = {0.0, -1.0, 0.0};  // Directional: direction the light travels
+    double position[3]  = {0.0, 0.0, 0.0};   // Point / Spot
+    double direction[3] = {0.0, -1.0, 0.0};  // Directional / Spot: direction the light travels
     double color[3]     = {1.0, 1.0, 1.0};
     double intensity    = 1.0;
+    // Spot only: cone half-angles in radians. Full intensity inside innerAngle, smoothstep to zero at outerAngle.
+    double innerAngle   = 0.6;
+    double outerAngle   = 0.7853981634;
 };
 
 struct RtTriangle {
