@@ -445,7 +445,7 @@ static Vec3 gradientSky(const Vec3& dir)
 // Directional lights are treated as infinitely far (no distance falloff, shadow ray unbounded);
 // point lights get inverse-square falloff and a shadow ray clipped to the light's distance.
 static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
-                                  const std::vector<RtLight>& lights)
+                                  const std::vector<RtLight>& lights, Random& random)
 {
     Vec3 sum(0.0);
     for (const auto& light : lights) {
@@ -453,7 +453,18 @@ static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
         double maxDist = kInfinity;
         double falloff = 1.0;
 
-        if (light.type == RtLight::Type::Point || light.type == RtLight::Type::Spot) {
+        if (light.type == RtLight::Type::Area) {
+            const Vec3 u(light.halfU[0], light.halfU[1], light.halfU[2]), v(light.halfV[0], light.halfV[1], light.halfV[2]);
+            const Vec3 sample = Vec3(light.position[0], light.position[1], light.position[2]) + u * random.nextSigned() + v * random.nextSigned();
+            const Vec3 delta = sample - record.position;
+            const double distSq = Math::getLengthSquared(delta);
+            if (distSq < 1e-12) continue;
+            maxDist = std::sqrt(distSq);
+            toLight = delta / maxDist;
+            const double emit = glm::dot(glm::normalize(Vec3(light.direction[0], light.direction[1], light.direction[2])), -toLight);
+            if (emit <= 0.0) continue;   // behind the emitter
+            falloff = emit / std::max(distSq, 1e-6);
+        } else if (light.type == RtLight::Type::Point || light.type == RtLight::Type::Spot) {
             const Vec3 lightPos(light.position[0], light.position[1], light.position[2]);
             const Vec3 delta = lightPos - record.position;
             const double distSq = Math::getLengthSquared(delta);
@@ -502,7 +513,7 @@ static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& 
     if (!lights.empty()) {
         const Vec3 brdf = record.material->directLightBRDF(record);
         if (brdf.x > 0.0 || brdf.y > 0.0 || brdf.z > 0.0)
-            direct = brdf * sampleDirectLighting(record, world, lights);
+            direct = brdf * sampleDirectLighting(record, world, lights, random);
     }
 
     Ray  scattered;
