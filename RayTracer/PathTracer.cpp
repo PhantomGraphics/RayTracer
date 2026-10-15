@@ -453,7 +453,7 @@ static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
         double maxDist = kInfinity;
         double falloff = 1.0;
 
-        if (light.type == RtLight::Type::Point) {
+        if (light.type == RtLight::Type::Point || light.type == RtLight::Type::Spot) {
             const Vec3 lightPos(light.position[0], light.position[1], light.position[2]);
             const Vec3 delta = lightPos - record.position;
             const double distSq = Math::getLengthSquared(delta);
@@ -461,6 +461,15 @@ static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
             maxDist  = std::sqrt(distSq);
             toLight  = delta / maxDist;
             falloff  = 1.0 / std::max(distSq, 1e-6);
+            if (light.type == RtLight::Type::Spot) {
+                // Angle between the cone axis and the direction from the light to the surface.
+                const Vec3 axis = glm::normalize(Vec3(light.direction[0], light.direction[1], light.direction[2]));
+                const double cosAngle = glm::dot(axis, -toLight);
+                const double cosOuter = std::cos(light.outerAngle), cosInner = std::cos(std::min(light.innerAngle, light.outerAngle));
+                if (cosAngle <= cosOuter) continue;
+                const double t = cosInner > cosOuter ? std::clamp((cosAngle - cosOuter) / (cosInner - cosOuter), 0.0, 1.0) : 1.0;
+                falloff *= t * t * (3.0 - 2.0 * t);
+            }
         } else {
             toLight = -glm::normalize(Vec3(light.direction[0], light.direction[1], light.direction[2]));
         }
