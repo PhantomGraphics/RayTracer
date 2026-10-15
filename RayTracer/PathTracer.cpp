@@ -1,7 +1,7 @@
 ﻿#include "pch.h"
 #include "PathTracer.h"
 
-#include "../../CGLib/Math/Vector3d.h"
+#include "../../CGLib/Math/Math/Vector3d.h"
 #include "../../CGLib/Space/Space/BVH.h"
 
 namespace Phantom::RayTracer {
