@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "PathTracer.h"
 
 #include "../../CGLib/Math/Math/Vector3d.h"
@@ -434,6 +434,29 @@ private:
 // ---------------------------------------------------------------------------
 // Sky gradient background for glTF scene rendering
 // ---------------------------------------------------------------------------
+static Vec3 gradientSky(const Vec3& dir);
+
+// Radiance of the panorama in direction `dir` (bilinear, wrapping around the horizon).
+static Vec3 environmentSky(const RtEnvironment& env, const Vec3& dir)
+{
+    const Vec3 d = glm::normalize(dir);
+    const double kPi = 3.14159265358979323846;
+    const double u = std::atan2(d.z, d.x) / (2.0 * kPi) + 0.5;
+    const double v = 0.5 - std::asin(std::clamp(d.y, -1.0, 1.0)) / kPi;
+    const double fx = u * env.width - 0.5, fy = std::clamp(v * env.height - 0.5, 0.0, env.height - 1.0);
+    const int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+    const double tx = fx - x0, ty = fy - y0;
+    auto texel = [&](int x, int y) {
+        x = ((x % env.width) + env.width) % env.width;
+        y = std::clamp(y, 0, env.height - 1);
+        const float* p = &env.rgb[(static_cast<size_t>(y) * env.width + x) * 3];
+        return Vec3(p[0], p[1], p[2]);
+    };
+    const Vec3 top = texel(x0, y0) * (1.0 - tx) + texel(x0 + 1, y0) * tx;
+    const Vec3 bottom = texel(x0, y0 + 1) * (1.0 - tx) + texel(x0 + 1, y0 + 1) * tx;
+    return (top * (1.0 - ty) + bottom * ty) * env.intensity;
+}
+
 static Vec3 gradientSky(const Vec3& dir)
 {
     const double t = 0.5 * (glm::normalize(dir).y + 1.0);
@@ -498,14 +521,15 @@ static Vec3 sampleDirectLighting(const HitRecord& record, const Hittable& world,
     return sum;
 }
 
+// `env` (may be null) replaces the gradient sky; `primary` marks a camera ray, which sees the panorama only when env->background.
 static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& random,
-                       const std::vector<RtLight>& lights)
+                       const std::vector<RtLight>& lights, const RtEnvironment* env = nullptr, bool primary = true)
 {
     if (depth <= 0) return Vec3(0.0);
 
     HitRecord record;
     if (!world.hit(ray, 1e-4, kInfinity, record))
-        return gradientSky(ray.direction);
+        return env && env->valid() && (!primary || env->background) ? environmentSky(*env, ray.direction) : gradientSky(ray.direction);
 
     const Vec3 emitted = record.material->emitted(record.u, record.v);
 
@@ -521,7 +545,7 @@ static Vec3 traceGltf(const Ray& ray, const Hittable& world, int depth, Random& 
     if (!record.material->scatter(ray, record, attenuation, scattered, random))
         return emitted + direct;
 
-    const Vec3 indirect = traceGltf(scattered, world, depth - 1, random, lights);
+    const Vec3 indirect = traceGltf(scattered, world, depth - 1, random, lights, env, false);
     return emitted + direct + Vec3(attenuation.x * indirect.x,
                                     attenuation.y * indirect.y,
                                     attenuation.z * indirect.z);
@@ -1230,7 +1254,7 @@ static bool renderTriangleSceneWithTextures(
     renderRowsParallel(output, camera, settings.width, settings.height,
                         settings.samplesPerPixel, settings.randomSeed,
                         [&](const Ray& ray, Random& random) {
-                            return traceGltf(ray, world, settings.maxDepth, random, lights);
+                            return traceGltf(ray, world, settings.maxDepth, random, lights, settings.environment, true);
                         },
                         settings.cancel, settings.progressRows);
     if (settings.cancel && settings.cancel->load()) return false;

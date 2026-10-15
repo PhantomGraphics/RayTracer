@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "../../CGLib/Graphics/Graphics/Image.h"
 #include "../../CGLib/Math/Math/Vector3d.h"
@@ -10,6 +10,19 @@
 
 namespace Phantom::RayTracer {
 
+// An equirectangular HDR panorama (row 0 = zenith, u = atan2(z, x) / 2pi + 0.5, the same mapping the viewport's environment
+// uses) that replaces the gradient sky: rays that leave the scene return its radiance times `intensity`, so it lights the
+// scene through indirect bounces and is what the camera sees behind it when `background` is set (otherwise the camera sees
+// the gradient and only the bounces see the panorama).
+struct RtEnvironment {
+    int width = 0;
+    int height = 0;
+    std::vector<float> rgb;   // width * height * 3, linear
+    double intensity = 1.0;
+    bool background = true;
+    bool valid() const { return width > 0 && height > 0 && rgb.size() >= static_cast<size_t>(width) * height * 3; }
+};
+
 struct RenderSettings {
     int width = 256;
     int height = 256;
@@ -20,6 +33,7 @@ struct RenderSettings {
     // Optional controls of a long render (the caller owns the objects; they must outlive the call).
     const std::atomic<bool>* cancel = nullptr;  // set to true to stop early: render() then returns false
     std::atomic<int>* progressRows = nullptr;   // number of finished image rows
+    const RtEnvironment* environment = nullptr; // optional panorama sky for triangle-scene renders (the caller owns it)
 };
 
 struct RtCameraSpec {
