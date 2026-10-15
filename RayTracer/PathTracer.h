@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "../../CGLib/Graphics/Graphics/Image.h"
-#include "../../CGLib/Math/Vector3d.h"
+#include "../../CGLib/Math/Math/Vector3d.h"
 
 #include <atomic>
 #include <cstdint>
