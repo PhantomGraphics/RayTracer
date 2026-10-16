@@ -71,6 +71,7 @@ phantom_add_graphics_core()
 phantom_add_space_core()
 
 add_library(RayTracerCore STATIC
+    ${RAYTRACER_ROOT}/Core/EnvironmentLoader.cpp
     ${RAYTRACER_ROOT}/Core/PathTracer.cpp
     ${RAYTRACER_ROOT}/Core/PhotonMapper.cpp
     ${RAYTRACER_ROOT}/Core/PBVRResampler.cpp
@@ -96,6 +97,7 @@ if(PHANTOM_GTEST_FOUND)
     enable_testing()
 
     add_executable(RayTracerTest
+        ${RAYTRACER_ROOT}/RayTracerTest/EnvironmentLoaderTest.cpp
         ${RAYTRACER_ROOT}/RayTracerTest/PathTracerTest.cpp
         ${RAYTRACER_ROOT}/RayTracerTest/PhotonMapperTest.cpp
     )
