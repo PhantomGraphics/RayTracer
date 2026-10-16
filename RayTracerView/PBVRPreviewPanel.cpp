@@ -5,7 +5,7 @@
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/SpvResolver.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
-#include "../../CGLib/Graphics/Graphics/ImageFileWriter.h"
+#include "../../CGLib/Graphics/Core/ImageFileWriter.h"
 #include <fstream>
 
 namespace {

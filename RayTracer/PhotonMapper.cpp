@@ -1,7 +1,7 @@
 #include "PhotonMapper.h"
 #include "PBVRResampler.h"
-#include "../../CGLib/Space/Space/KDTree.h"
-#include "../../CGLib/Space/Space/BVH.h"
+#include "../../CGLib/Space/Core/KDTree.h"
+#include "../../CGLib/Space/Core/BVH.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

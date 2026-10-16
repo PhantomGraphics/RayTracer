@@ -1,11 +1,11 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "RayTraceResultPanel.h"
 #include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/VulkanImage.h"
-#include "../../CGLib/Graphics/Graphics/ImageFileWriter.h"
+#include "../../CGLib/Graphics/Core/ImageFileWriter.h"
 
 #include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"

@@ -4,7 +4,7 @@
 // Intensity: the tracer's direct light is albedo / pi * intensity, the viewport's is albedo * radiance, so the tracer gets
 // intensity * pi to match. An area light is a one-sided rectangle (halfU / halfV are its half-width / half-height axes).
 #include "PathTracer.h"
-#include "../../CGLib/PBR/PBR/Light.h"
+#include "../../CGLib/PBR/Core/Light.h"
 
 namespace Phantom::RayTracer {
 

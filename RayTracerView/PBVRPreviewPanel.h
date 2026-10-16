@@ -1,6 +1,6 @@
 #pragma once
 #include "RayTraceResultPanel.h"
-#include "../../CGLib/Math/Math/Vector3d.h"
+#include "../../CGLib/Math/Core/Vector3d.h"
 #include <chrono>
 #include <filesystem>
 #include <future>
