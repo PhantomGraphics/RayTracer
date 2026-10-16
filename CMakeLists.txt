@@ -2,7 +2,7 @@
 # its GoogleTest suite (RayTracerTest), and RayTracerView (Vulkan app).
 #
 # This is a standalone CMake build, separate from the MSBuild/.vcxproj-based
-# Windows build (RayTracer/RayTracer/RayTracer.vcxproj + RayTracer/
+# Windows build (RayTracer/Core/RayTracer.vcxproj + RayTracer/
 # RayTracerTest/RayTracerTest.vcxproj, driven by Phantom2026.sln).
 # MathCore/GraphicsCore/SpaceCore/GltfRendererCore/etc. are now defined once
 # in ../cmake/PhantomCoreLibs.cmake and ../cmake/PhantomVulkanApp.cmake
@@ -22,7 +22,7 @@
 # Prerequisite: libgtest-dev (provides libgtest.a/libgtest_main.a + the GTest
 # CMake package config under /usr/lib/x86_64-linux-gnu/cmake/GTest).
 #
-# NOTE on RayTracer.vcxproj vs RayTracerLib.vcxproj: RayTracer/RayTracer/
+# NOTE on RayTracer.vcxproj vs RayTracerLib.vcxproj: RayTracer/Core/
 # contains two nearly-identical .vcxproj files (RayTracer.vcxproj and
 # RayTracerLib.vcxproj), both StaticLibrary configs compiling the exact same
 # two sources (pch.cpp + PathTracer.cpp). RayTracerTest.vcxproj and
@@ -71,9 +71,9 @@ phantom_add_graphics_core()
 phantom_add_space_core()
 
 add_library(RayTracerCore STATIC
-    ${RAYTRACER_ROOT}/RayTracer/PathTracer.cpp
-    ${RAYTRACER_ROOT}/RayTracer/PhotonMapper.cpp
-    ${RAYTRACER_ROOT}/RayTracer/PBVRResampler.cpp
+    ${RAYTRACER_ROOT}/Core/PathTracer.cpp
+    ${RAYTRACER_ROOT}/Core/PhotonMapper.cpp
+    ${RAYTRACER_ROOT}/Core/PBVRResampler.cpp
 )
 target_include_directories(RayTracerCore PRIVATE ${REPO_ROOT})
 target_link_libraries(RayTracerCore PUBLIC MathCore GraphicsCore SpaceCore)
@@ -101,7 +101,7 @@ if(PHANTOM_GTEST_FOUND)
     )
     target_include_directories(RayTracerTest PRIVATE
         ${REPO_ROOT}
-        ${RAYTRACER_ROOT}/RayTracer
+        ${RAYTRACER_ROOT}/Core
         ${RAYTRACER_ROOT}/RayTracerTest
     )
     target_link_libraries(RayTracerTest PRIVATE
@@ -170,7 +170,7 @@ add_executable(RayTracerView
 target_include_directories(RayTracerView PRIVATE
     ${CGLIB_ROOT}/ThirdParty/imgui
     ${CGLIB_ROOT}/UIWidgets
-    ${RAYTRACER_ROOT}/RayTracer
+    ${RAYTRACER_ROOT}/Core
 )
 target_link_libraries(RayTracerView PRIVATE
     RayTracerCore

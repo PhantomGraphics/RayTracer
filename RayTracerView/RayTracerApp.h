@@ -7,7 +7,7 @@
 #include "../../CGLib/VkAppBase/ScenarioRunner/ViewShell.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 #include "../../CGLib/GltfRenderer/Renderer/GltfSceneRenderer.h"
-#include "../RayTracer/PathTracer.h"
+#include "../Core/PathTracer.h"
 #include "MenuPanel.h"
 #include "RayTraceResultPanel.h"
 #include "PBVRPreviewPanel.h"

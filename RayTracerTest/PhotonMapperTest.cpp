@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "../RayTracer/PhotonMapper.h"
-#include "../RayTracer/PBVRResampler.h"
+#include "../Core/PhotonMapper.h"
+#include "../Core/PBVRResampler.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
