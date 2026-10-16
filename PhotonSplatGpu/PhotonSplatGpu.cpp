@@ -1,5 +1,5 @@
 #include "PhotonSplatGpu.h"
-#include "../../CGLib/Math/Math/Vector4d.h"
+#include "../../CGLib/Math/Core/Vector4d.h"
 #include "../../CGLib/VulkanGraphics/VulkanContext.h"
 #include "../../CGLib/VulkanGraphics/VulkanCommandPool.h"
 #include "../../CGLib/VulkanGraphics/VulkanPipeline.h"

@@ -1,7 +1,7 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "GltfToRt.h"
 
-#include "CGLib/Math/Math/glm.h"
+#include "CGLib/Math/Core/glm.h"
 #include "CGLib/ThirdParty/glm/glm/gtc/matrix_transform.hpp"
 #include "CGLib/ThirdParty/glm/glm/gtc/quaternion.hpp"
 

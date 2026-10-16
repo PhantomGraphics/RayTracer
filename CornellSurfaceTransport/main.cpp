@@ -1,6 +1,6 @@
 // CPU surface counterpart of PBVR's particle-probe scattering iteration.
 // Geometry is intersected exactly; particles cache outgoing diffuse radiance.
-#include "../../CGLib/Math/Math/Vector3d.h"
+#include "../../CGLib/Math/Core/Vector3d.h"
 #include "../RayTracer/PhotonMapper.h"
 #ifdef PHOTON_SPLAT_VULKAN
 #include "../PhotonSplatGpu/PhotonSplatGpu.h"

@@ -1,8 +1,8 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "PathTracer.h"
 #include "GltfToRt.h"
 
-#include "../../CGLib/Graphics/Graphics/ImageFileWriter.h"
+#include "../../CGLib/Graphics/Core/ImageFileWriter.h"
 #include "GltfFileReader.h"
 
 #include <algorithm>
