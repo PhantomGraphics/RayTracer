@@ -2,7 +2,7 @@
 
 #include "../../CGLib/VkAppBase/IVkSubRenderer.h"
 #include "../../CGLib/VulkanGraphics/VulkanSampler.h"
-#include "../RayTracer/PathTracer.h"
+#include "../Core/PathTracer.h"
 
 #include <future>
 #include <vector>

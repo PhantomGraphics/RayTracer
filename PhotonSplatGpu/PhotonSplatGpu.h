@@ -1,5 +1,5 @@
 #pragma once
-#include "../RayTracer/PhotonMapper.h"
+#include "../Core/PhotonMapper.h"
 #include <memory>
 #include <string>
 

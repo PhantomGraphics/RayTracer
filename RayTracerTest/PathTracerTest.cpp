@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "../RayTracer/PathTracer.h"
+#include "../Core/PathTracer.h"
 
 // ---------------------------------------------------------------------------
 // Group 1: Struct default values

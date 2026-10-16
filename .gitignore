@@ -2,16 +2,16 @@
 # この .gitignore ファイルは Microsoft(R) Visual Studio によって自動的に作成されました。
 ################################################################################
 
-/RayTracer/x64/Release
+/Core/x64/Release
 *.ppm
-/RayTracer/x64/Debug
-/RayTracer/output.png
+/Core/x64/Debug
+/Core/output.png
 /RayTracerView/x64/Debug
 /RayTracerView/imgui.ini
 /RayTracerView/x64/Release
 /RayTracerTest/x64/Debug
-/RayTracer/RayTracer/x64/Debug
-/RayTracer/RayTracer/x64/Release
+/Core/x64/Debug
+/Core/x64/Release
 /RayTracerView/RayTracerView/x64/Debug
 /.vs/RayTracer
 /Debug

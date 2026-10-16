@@ -1,5 +1,5 @@
 #include "DepthPhotonTransport.h"
-#include "../RayTracer/PBVRResampler.h"
+#include "../Core/PBVRResampler.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>

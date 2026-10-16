@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../RayTracer/RayTracer/PathTracer.h"
+#include "../Core/PathTracer.h"
 #include "../../CGLib/GltfRenderer/Gltf/GltfDocument.h"
 
 #include <optional>
