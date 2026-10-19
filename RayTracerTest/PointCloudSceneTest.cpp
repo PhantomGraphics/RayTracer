@@ -286,3 +286,36 @@ TEST(PointCloudRenderTest, EmptyAndMissingCloudsAreSkippedAndAManyPointCloudRend
     for (size_t i = 0; i < big.radii.size(); ++i) big.colors[3 * i] = 1.f;
     EXPECT_TRUE(tracer.render({}, frontCamera(), image, {}, {}, { redSphere(big.data()) }));
 }
+
+TEST(PointCloudRenderTest, MetallicAndRoughnessReachThePointsSoAMirrorSphereReflectsTheScene)
+{
+    // A white sphere cloud seen from z = 10, and a red emissive wall BEHIND the camera (z = 20). A metallic, smooth cloud is a mirror:
+    // its centre pixel is the wall's red only. A plain diffuse white cloud lights up from the wall AND the blue sky.
+    Cloud cloud;
+    cloud.positions = { 0, 0, 0 };
+    cloud.radii = { 1.f };
+    cloud.colors = { 1.f, 1.f, 1.f };
+    RtTriangle a, b;
+    const double w = 60.0;
+    const double v0[3] = { -w, -w, 20 }, v1[3] = { w, -w, 20 }, v2[3] = { w, w, 20 }, v3[3] = { -w, w, 20 };
+    for (int k = 0; k < 3; ++k) { a.v0[k] = v0[k]; a.v1[k] = v1[k]; a.v2[k] = v2[k]; b.v0[k] = v0[k]; b.v1[k] = v2[k]; b.v2[k] = v3[k]; }
+    a.albedo[0] = b.albedo[0] = 1.0; a.albedo[1] = b.albedo[1] = 0.0; a.albedo[2] = b.albedo[2] = 0.0;
+    a.emission[0] = b.emission[0] = 1.0;   // a lit red wall, so the reflection carries colour
+    RenderSettings s = smallSettings(32);
+    s.samplesPerPixel = 16;
+    s.maxDepth = 4;
+    PathTracer tracer(s);
+
+    RtPointCloud mirror = redSphere(cloud.data());
+    mirror.metallic = 1.0;
+    mirror.roughness = 0.0;
+    Phantom::Graphics::Imageuc metal;
+    ASSERT_TRUE(tracer.render({ a, b }, frontCamera(), metal, {}, {}, { mirror }));
+    RtPointCloud plain = redSphere(cloud.data());
+    Phantom::Graphics::Imageuc dielectric;
+    ASSERT_TRUE(tracer.render({ a, b }, frontCamera(), dielectric, {}, {}, { plain }));
+    const auto m = metal.getColor(16, 16);
+    const auto d = dielectric.getColor(16, 16);
+    EXPECT_GT(m.r, m.b + 80);                         // the mirror shows only the red wall
+    EXPECT_LT(m.b + 15, d.b);                         // the diffuse cloud also gathers the blue sky; the mirror does not
+}
