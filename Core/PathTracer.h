@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PointCloudScene.h"
 #include "../../CGLib/Graphics/Core/Image.h"
 #include "../../CGLib/Math/Core/Vector3d.h"
 
@@ -137,6 +138,16 @@ public:
                 Graphics::Imageuc& output,
                 const std::vector<RtTexture>& textures,
                 const std::vector<RtLight>& lights) const;
+
+    // The same, plus point clouds: every point is an analytic sphere (an ellipsoid under a non-uniform scale) found through a BVH over
+    // the points, never expanded into triangles. Point clouds are objects of the scene like the triangles: lights, shadows, reflections
+    // and occlusion between points and meshes all apply. Empty clouds are skipped.
+    bool render(const std::vector<RtTriangle>& triangles,
+                const RtCameraSpec& cam,
+                Graphics::Imageuc& output,
+                const std::vector<RtTexture>& textures,
+                const std::vector<RtLight>& lights,
+                const std::vector<RtPointCloud>& pointClouds) const;
 
     // Load and render a .cscene JSON file
     SceneRenderResult renderScene(const std::string& scenePath,

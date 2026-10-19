@@ -88,6 +88,9 @@ struct HitRecord {
     bool frontFace = true;
     double u = 0.0; // texture coordinate
     double v = 0.0; // texture coordinate
+    // A point of a point cloud carries its own albedo (linear): when set, it replaces the material's base colour and texture.
+    bool hasColor = false;
+    Vec3 color = Vec3(1.0);
 
     void setFaceNormal(const Ray& ray, const Vec3& outwardNormal)
     {
@@ -737,7 +740,7 @@ public:
 
     Vec3 directLightBRDF(const HitRecord& record) const override
     {
-        const Vec3 effectiveAlbedo = m_baseColorTex
+        const Vec3 effectiveAlbedo = record.hasColor ? record.color : m_baseColorTex
             ? srgbToLinear(m_baseColorTex->sample(record.u, record.v))
             : m_albedo;
         double effectiveMetallic = m_metallic;
@@ -755,7 +758,7 @@ public:
         Random& random) const override
     {
         // Resolve texture-overridden material properties
-        const Vec3 effectiveAlbedo = m_baseColorTex
+        const Vec3 effectiveAlbedo = record.hasColor ? record.color : m_baseColorTex
             ? srgbToLinear(m_baseColorTex->sample(record.u, record.v))
             : m_albedo;
 
@@ -829,6 +832,81 @@ private:
     std::shared_ptr<Texture> m_baseColorTex;
     std::shared_ptr<Texture> m_metalRoughTex;
     std::shared_ptr<Texture> m_emissiveTex;
+};
+
+// ---------------------------------------------------------------------------
+// PointCloudHittable -- one RtPointCloud as an object of the scene. The rays are taken into the cloud's local space (the direction is
+// transformed but not normalised, so t is the same in both spaces) and intersected with the sphere of each point through the cloud's
+// BVH; the normal comes back through the inverse transpose, which makes a non-uniform scale an exact ellipsoid.
+// ---------------------------------------------------------------------------
+class PointCloudHittable : public Hittable {
+public:
+    PointCloudHittable(const RtPointCloud& cloud, std::shared_ptr<Material> material)
+        : m_cloud(cloud), m_material(std::move(material))
+    {
+        glm::dmat4 model(1.0);
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 4; ++r) model[c][r] = cloud.modelToWorld[c * 4 + r];
+        m_model = model;
+        m_inverse = glm::inverse(model);
+        m_normalMatrix = glm::transpose(glm::dmat3(m_inverse));
+        m_tint = Vec3(cloud.tint[0], cloud.tint[1], cloud.tint[2]);
+        m_uniform = Vec3(cloud.uniformColor[0], cloud.uniformColor[1], cloud.uniformColor[2]);
+    }
+
+    bool hit(const Ray& ray, double tMin, double tMax, HitRecord& record) const override
+    {
+        const RtPointCloudData& data = *m_cloud.data;
+        const glm::dvec4 o4 = m_inverse * glm::dvec4(ray.origin, 1.0);
+        const Vec3 o(o4.x, o4.y, o4.z);
+        const Vec3 d = glm::dmat3(m_inverse) * ray.direction;
+        PointBvh::Hit h;
+        if (!data.bvh().closestHit(data.positions(), data.radii(), &o.x, &d.x, tMin, tMax, m_cloud.radiusScale, h)) return false;
+
+        const float* p = data.positions() + 3 * static_cast<size_t>(h.index);
+        const double r = static_cast<double>(data.radii()[h.index]) * m_cloud.radiusScale;
+        const Vec3 local = o + d * h.t;
+        const Vec3 outward = glm::normalize(m_normalMatrix * ((local - Vec3(p[0], p[1], p[2])) / r));
+
+        record.t = h.t;
+        record.position = ray.at(h.t);
+        record.setFaceNormal(ray, outward);
+        record.material = m_material;
+        record.u = 0.0;
+        record.v = 0.0;
+        record.hasColor = true;
+        if (m_cloud.useUniformColor) record.color = m_uniform * m_tint;
+        else if (data.colors()) {
+            const float* c = data.colors() + 3 * static_cast<size_t>(h.index);
+            record.color = Vec3(c[0], c[1], c[2]) * m_tint;
+        } else record.color = m_tint;
+        return true;
+    }
+
+    Math::Box3df getAABB() const override
+    {
+        const PointBvh& bvh = m_cloud.data->bvh();
+        const float widen = m_cloud.radiusScale > 1.0 ? static_cast<float>((m_cloud.radiusScale - 1.0) * bvh.maxRadius()) : 0.f;
+        auto box = Math::Box3df::createDegeneratedBox();
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::dvec4 local((corner & 1 ? bvh.boundsMax()[0] + widen : bvh.boundsMin()[0] - widen),
+                                   (corner & 2 ? bvh.boundsMax()[1] + widen : bvh.boundsMin()[1] - widen),
+                                   (corner & 4 ? bvh.boundsMax()[2] + widen : bvh.boundsMin()[2] - widen), 1.0);
+            const glm::dvec4 w = m_model * local;
+            box.add(Math::Vector3df(static_cast<float>(w.x), static_cast<float>(w.y), static_cast<float>(w.z)));
+        }
+        constexpr float kEps = 1e-4f;
+        box.add(box.getMin() - Math::Vector3df(kEps, kEps, kEps));
+        box.add(box.getMax() + Math::Vector3df(kEps, kEps, kEps));
+        return box;
+    }
+
+private:
+    RtPointCloud m_cloud;
+    std::shared_ptr<Material> m_material;
+    glm::dmat4 m_model{ 1.0 }, m_inverse{ 1.0 };
+    glm::dmat3 m_normalMatrix{ 1.0 };
+    Vec3 m_tint{ 1.0 }, m_uniform{ 0.8 };
 };
 
 // ---------------------------------------------------------------------------
@@ -1198,7 +1276,8 @@ static bool renderTriangleSceneWithTextures(
     const RenderSettings&          settings,
     Graphics::Imageuc&             output,
     const std::vector<RtTexture>&  textures,
-    const std::vector<RtLight>&    lights)
+    const std::vector<RtLight>&    lights,
+    const std::vector<RtPointCloud>& pointClouds = {})
 {
     if (settings.width <= 0 || settings.height <= 0 ||
         settings.samplesPerPixel <= 0 || settings.maxDepth <= 0)
@@ -1243,6 +1322,18 @@ static bool renderTriangleSceneWithTextures(
             glm::dvec2(tri.uv0[0], tri.uv0[1]),
             glm::dvec2(tri.uv1[0], tri.uv1[1]),
             glm::dvec2(tri.uv2[0], tri.uv2[1])));
+    }
+
+    // Point clouds are objects of the same scene: one hittable each, the points themselves behind the cloud's own BVH.
+    for (const auto& cloud : pointClouds) {
+        if (!cloud.data || cloud.data->count() == 0) continue;
+        auto mat = std::make_shared<PbrMaterial>(Vec3(1.0), cloud.metallic, cloud.roughness, Vec3(0.0), 0.0, 1.5);
+        flat.add(std::make_shared<PointCloudHittable>(cloud, std::move(mat)));
+    }
+    if (!pointClouds.empty() && !settings.quiet) {
+        size_t points = 0;
+        for (const auto& cloud : pointClouds) if (cloud.data) points += cloud.data->count();
+        std::cout << "  + " << pointClouds.size() << " point cloud(s), " << points << " points (analytic spheres)" << std::endl;
     }
 
     const BvhHittableList world(flat.objects());
@@ -1377,6 +1468,16 @@ bool PathTracer::render(const std::vector<RtTriangle>& triangles,
                         const std::vector<RtLight>& lights) const
 {
     return renderTriangleSceneWithTextures(triangles, cam, settings_, output, textures, lights);
+}
+
+bool PathTracer::render(const std::vector<RtTriangle>& triangles,
+                        const RtCameraSpec& cam,
+                        Graphics::Imageuc& output,
+                        const std::vector<RtTexture>& textures,
+                        const std::vector<RtLight>& lights,
+                        const std::vector<RtPointCloud>& pointClouds) const
+{
+    return renderTriangleSceneWithTextures(triangles, cam, settings_, output, textures, lights, pointClouds);
 }
 
 SceneRenderResult PathTracer::renderScene(const std::string& scenePath,

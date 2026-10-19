@@ -73,6 +73,7 @@ phantom_add_space_core()
 add_library(RayTracerCore STATIC
     ${RAYTRACER_ROOT}/Core/EnvironmentLoader.cpp
     ${RAYTRACER_ROOT}/Core/PathTracer.cpp
+    ${RAYTRACER_ROOT}/Core/PointCloudScene.cpp
     ${RAYTRACER_ROOT}/Core/PhotonMapper.cpp
     ${RAYTRACER_ROOT}/Core/PBVRResampler.cpp
 )
@@ -99,6 +100,7 @@ if(PHANTOM_GTEST_FOUND)
     add_executable(RayTracerTest
         ${RAYTRACER_ROOT}/RayTracerTest/EnvironmentLoaderTest.cpp
         ${RAYTRACER_ROOT}/RayTracerTest/PathTracerTest.cpp
+        ${RAYTRACER_ROOT}/RayTracerTest/PointCloudSceneTest.cpp
         ${RAYTRACER_ROOT}/RayTracerTest/PhotonMapperTest.cpp
     )
     target_include_directories(RayTracerTest PRIVATE
