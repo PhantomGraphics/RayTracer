@@ -1072,8 +1072,10 @@ void renderRowsParallel(Graphics::Imageuc& output, const Camera& camera,
             while ((y = nextRow.fetch_add(1)) < height) {
                 if (cancel && cancel->load()) break;
                 for (int x = 0; x < width; ++x) {
+                    if (cancel && cancel->load(std::memory_order_relaxed)) return;
                     Vec3 color(0.0);
                     for (int s = 0; s < spp; ++s) {
+                        if (cancel && cancel->load(std::memory_order_relaxed)) return;
                         const double u = (static_cast<double>(x) + random.next01()) / static_cast<double>(width  - 1);
                         const double v = (static_cast<double>(y) + random.next01()) / static_cast<double>(height - 1);
                         color += traceRay(camera.getRay(u, 1.0 - v), random);
@@ -1081,7 +1083,7 @@ void renderRowsParallel(Graphics::Imageuc& output, const Camera& camera,
                     output.setColor(x, y, toRGBA(color, spp));
                 }
                 const int done = ++rowsDone;
-                if (progressRows) progressRows->store(done);
+                if (progressRows) progressRows->fetch_add(1);
                 std::lock_guard<std::mutex> lock(progressMutex);
                 reportProgress(done - 1, height, nextPercent);
             }
